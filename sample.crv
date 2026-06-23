@@ -1,0 +1,97 @@
+---
+title: Carve Sample
+author: markup-carve
+tags: [carve, demo]
+---
+
+%% This file demonstrates the Carve constructs that carve-mode highlights.
+
+# Carve Sample
+
+A tour of /italic/, *bold*, /*bold italic*/, _underline_, ~strike~,
+=highlight=, ^super^, and ,,sub,, text. Forced intraword forms: H{,2,}O and
+mc{^2^} and foo{*bar*}baz.
+
+## Inline
+
+Run `npm install` first, or pass a raw `<br>`{=html} when you must.
+Inline math $`E = mc^2` and display math on its own line:
+
+$$`\int_0^1 x\,dx`
+
+## Links and references
+
+Read [Djot](https://djot.net "The spec") for details, and the
+[introduction][intro] too. A collapsed reference: [Other Page][].
+Autolink <https://example.com> and email <hello@example.com>.
+Cross-reference: see </#inline>. An image with a caption:
+
+![Apollo 11](apollo.jpg)
+^ Figure 1: First moon landing
+
+[intro]: https://example.com/intro "Introduction"
+[Other Page]: /other-page
+
+## Lists
+
+- apples
+- oranges
+  - clementines
+- [ ] a pending task
+- [x] a finished task
+
+1. first
+2. second
+3. third
+
+:: term
+:  a definition for the term
+
+## Blockquote
+
+> Stay hungry, stay foolish.
+^ Steve Jobs
+
+## Code
+
+```python "demo.py" [Build]
+print("hello, carve")
+```
+
+```=html
+<div>passed through for HTML output</div>
+```
+
+## Admonitions and divs
+
+::: note "Heads up"
+This is an admonition with a title.
+:::
+
+{#sidebar .featured}
+:::
+A generic div carrying attributes from the line above.
+:::
+
+## Tables
+
+|= Fruit |=> Price |
+| Apple  | $1      |
+| Pear   | $2      |
+^ Fruit prices
+
+## Footnotes
+
+Carve has footnotes.[^fn] You can also write inline ones ^[like this].
+
+[^fn]: Defined anywhere; resolved by label.
+
+## Editorial and social
+
+A revision: {+inserted+} {-deleted-} {~old~>new~} {# a comment #}.
+Mentions and tags: hey @alice, see #release-1.0.
+
+%%%
+A block comment spanning
+multiple lines.
+%%%
