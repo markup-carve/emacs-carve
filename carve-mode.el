@@ -5,7 +5,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
-;; URL: https://github.com/markup-carve/carve-emacs
+;; URL: https://github.com/markup-carve/emacs-carve
 ;; SPDX-License-Identifier: MIT
 
 ;; Copyright (c) 2026 markup-carve
@@ -62,7 +62,7 @@
   "Major mode for editing Carve markup."
   :prefix "carve-"
   :group 'text
-  :link '(url-link "https://github.com/markup-carve/carve-emacs"))
+  :link '(url-link "https://github.com/markup-carve/emacs-carve"))
 
 (defcustom carve-command "carve"
   "Name of (or path to) the Carve command-line tool.
