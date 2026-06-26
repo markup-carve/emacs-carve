@@ -154,6 +154,24 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "hi @alice there\n" "@alice")
            'carve-mention-face)))
 
+(ert-deftest carve-test-citation-key ()
+  "The @key inside a citation group is fontified as a mention."
+  (should (carve-test--face-includes
+           (carve-test--face-at "See [@smith2023] for details.\n" "@smith2023")
+           'carve-mention-face)))
+
+(ert-deftest carve-test-citation-integral ()
+  "A leading `+' in a citation group is fontified."
+  (should (carve-test--face-includes
+           (carve-test--face-at "Proved in [+@jones2020, p. 5].\n" "+")
+           'carve-mention-face)))
+
+(ert-deftest carve-test-callout-marker ()
+  "A `<N>' code callout marker is fontified as markup."
+  (should (carve-test--face-includes
+           (carve-test--face-at "    x = 1  <1>\n" "<1>")
+           'carve-markup-face)))
+
 (ert-deftest carve-test-critic ()
   "A CriticMarkup insertion is fontified with the critic face."
   (should (carve-test--face-includes

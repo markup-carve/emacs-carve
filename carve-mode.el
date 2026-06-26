@@ -392,6 +392,29 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx (or bol space (any "([{")) (group "^" (minimal-match (one-or-more (not (any "^\n")))) "^"))
      (1 'carve-markup-face))
 
+    ;; Citation groups: [+@key, loc; @key2] — highlight @key and the +/- markers.
+    ;; A citation bracket has no (url)/[ref]/{attr} tail.
+    (,(rx (group "[" (opt "+"))
+          (zero-or-more (not (any "@]")))
+          (group "@" (one-or-more (any "A-Za-z0-9_:.#$%&+?<>~/-")))
+          (zero-or-more (not (any "]")))
+          "]"
+          (not (any "([{" ?\n)))
+     (1 'carve-mention-face)
+     (2 'carve-mention-face))
+    ;; Also match citation brackets at end-of-line.
+    (,(rx (group "[" (opt "+"))
+          (zero-or-more (not (any "@]")))
+          (group "@" (one-or-more (any "A-Za-z0-9_:.#$%&+?<>~/-")))
+          (zero-or-more (not (any "]")))
+          "]" eol)
+     (1 'carve-mention-face)
+     (2 'carve-mention-face))
+
+    ;; CodeCallout markers: <N> with digits only.
+    (,(rx (group "<" (one-or-more digit) ">"))
+     (1 'carve-markup-face))
+
     ;; Mentions and tags (word boundary).
     (,(rx (or bol space (any "([")) (group "@" (one-or-more (any "a-zA-Z0-9._-"))))
      (1 'carve-mention-face))
