@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Byte-compile and ERT
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emacs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y emacs-nox
+
+      - name: Byte-compile (errors fail the build)
+        run: |
+          emacs -Q --batch -f batch-byte-compile carve-mode.el
+
+      - name: Run ERT tests
+        run: |
+          emacs -Q --batch \
+            -l ert \
+            -l carve-mode.el \
+            -l carve-mode-tests.el \
+            -f ert-run-tests-batch-and-exit
