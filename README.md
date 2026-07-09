@@ -1,11 +1,11 @@
 # carve-mode
 
-An Emacs major mode for [Carve](https://markup-carve.org), a post-Markdown
+An Emacs major mode for [Carve](https://github.com/markup-carve/carve), a post-Markdown
 markup language whose mnemonic is "the markup looks like its output."
 
 `carve-mode` provides syntax highlighting, a `%%` comment syntax, an imenu
 index of headings, outline support, and an optional preview command for `.crv`
-and `.carve` files.
+files.
 
 ## Features
 
@@ -44,14 +44,14 @@ Put `carve-mode.el` on your `load-path` and require it:
 (require 'carve-mode)
 ```
 
-Files ending in `.crv` or `.carve` then open in `carve-mode` automatically.
+Files ending in `.crv` then open in `carve-mode` automatically.
 
 ### use-package
 
 ```elisp
 (use-package carve-mode
   :load-path "/path/to/carve-emacs"
-  :mode ("\\.crv\\'" "\\.carve\\'"))
+  :mode "\\.crv\\'")
 ```
 
 When installed from a package archive, drop the `:load-path`.

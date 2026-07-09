@@ -30,10 +30,10 @@
 
 ;;; Commentary:
 
-;; Carve is a post-Markdown markup language (see https://markup-carve.org).
+;; Carve is a post-Markdown markup language (see https://github.com/markup-carve/carve).
 ;; This package provides `carve-mode', a major mode that adds syntax
 ;; highlighting, a comment syntax, an imenu index of headings, outline support,
-;; and an optional preview command for `.crv' and `.carve' files.
+;; and an optional preview command for `.crv' files.
 ;;
 ;; The font-lock rules cover the core Carve constructs: ATX headings, the
 ;; mnemonic inline emphasis family (`/italic/', `*bold*', `_underline_',
@@ -52,7 +52,7 @@
 ;;
 ;;   (require 'carve-mode)
 ;;
-;; Files ending in `.crv' or `.carve' then open in `carve-mode'.
+;; Files ending in `.crv' then open in `carve-mode'.
 
 ;;; Code:
 
@@ -540,8 +540,6 @@ installed, signal a user error instead of failing obscurely."
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.crv\\'" . carve-mode))
-;;;###autoload
-(add-to-list 'auto-mode-alist '("\\.carve\\'" . carve-mode))
 
 (provide 'carve-mode)
 
