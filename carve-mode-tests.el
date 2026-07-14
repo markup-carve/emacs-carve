@@ -172,6 +172,30 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "    x = 1  <1>\n" "<1>")
            'carve-markup-face)))
 
+(ert-deftest carve-test-braced-superscript ()
+  "A braced `{^...^}' superscript is fontified as markup."
+  (should (carve-test--face-includes
+           (carve-test--face-at "energy mc{^2^} here\n" "{^2^}")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-braced-subscript ()
+  "A braced `{,...,}' subscript is fontified as markup."
+  (should (carve-test--face-includes
+           (carve-test--face-at "water H{,2,}O here\n" "{,2,}")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-bare-caret-is-literal ()
+  "A bare `^text^' is literal text, not superscript markup."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a ^literal^ caret\n" "^literal^")
+               'carve-markup-face)))
+
+(ert-deftest carve-test-bare-comma-is-literal ()
+  "A bare `,text,' is literal text, not subscript markup."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a ,literal, comma\n" ",literal,")
+               'carve-markup-face)))
+
 (ert-deftest carve-test-critic ()
   "A CriticMarkup insertion is fontified with the critic face."
   (should (carve-test--face-includes
