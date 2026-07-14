@@ -12,8 +12,9 @@ files.
 - ATX headings (`#` through `######`) with imenu and `outline-minor-mode`
   support.
 - The full mnemonic inline family: `/italic/`, `*bold*`, `_underline_`,
-  `~strike~`, `=highlight=`, `^super^`, `,,sub,,`, plus the forced brace forms
-  `{^...^}`, `{,...,}`, `{*...*}`, `{/.../}`, `{_..._}`, `{~...~}`, `{=...=}`.
+  `~strike~`, `=highlight=`, plus the brace forms `{*...*}`, `{/.../}`,
+  `{_..._}`, `{~...~}`, `{=...=}` and the brace-only superscript `{^super^}`
+  and subscript `{,sub,}` (a bare `^` or `,` is literal text).
 - Inline code `` `code` `` and raw inline `` `x`{=html} ``.
 - Links `[text](url)`, titled links, autolinks `<url>` / `<email>`, reference
   links `[text][ref]`, collapsed `[ref][]`, link definitions `[ref]: url`,

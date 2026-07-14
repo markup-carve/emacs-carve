@@ -37,8 +37,9 @@
 ;;
 ;; The font-lock rules cover the core Carve constructs: ATX headings, the
 ;; mnemonic inline emphasis family (`/italic/', `*bold*', `_underline_',
-;; `~strike~', `=highlight=', `^super^', `,,sub,,', and the forced brace
-;; forms), inline and raw inline code, links, autolinks, reference links and
+;; `~strike~', `=highlight=', and the brace forms, including superscript
+;; `{^...^}' and subscript `{,...,}'), inline and raw inline code, links,
+;; autolinks, reference links and
 ;; definitions, images, cross-references, lists (bullet, ordered, task),
 ;; definition lists, blockquotes, caption lines, fenced and raw code blocks,
 ;; `%%' comments, fenced divs and admonitions, block-attribute lines, tables,
@@ -365,11 +366,16 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-code-face keep))
 
     ;; CriticMarkup: {+ins+} {-del-} {~old~>new~} {# comment #}
-    (,(rx (group "{" (any "+-~#") (minimal-match (zero-or-more not-newline))
-                 (any "+-~#") "}"))
+    ;; The delimiter set is the literal chars + - ~ # (list each member
+    ;; separately so `-' is not read as a range that would also swallow
+    ;; brace emphasis such as `{^..^}', `{,..,}', `{=..=}').
+    (,(rx (group "{" (any "+" "-" "~" "#") (minimal-match (zero-or-more not-newline))
+                 (any "+" "-" "~" "#") "}"))
      (1 'carve-critic-face))
 
-    ;; Forced brace emphasis: {^...^} {,...,} {*...*} {/.../} {_..._} {~...~} {=...=}
+    ;; Brace emphasis, superscript, and subscript: {^...^} {,...,} {*...*}
+    ;; {/.../} {_..._} {~...~} {=...=}.  Superscript and subscript exist only
+    ;; in these braced forms; a bare `^' or `,' is literal text.
     (,(rx "{" (group (any "*/_~^,=")) (minimal-match (one-or-more not-newline))
           (backref 1) "}")
      (0 'carve-markup-face))
@@ -389,8 +395,6 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-strike-face))
     (,(rx (or bol space (any "([{")) (group "=" (minimal-match (one-or-more (not (any "=\n")))) "="))
      (1 'carve-highlight-face))
-    (,(rx (or bol space (any "([{")) (group "^" (minimal-match (one-or-more (not (any "^\n")))) "^"))
-     (1 'carve-markup-face))
 
     ;; Citation groups: [+@key, loc; @key2] — highlight @key and the +/- markers.
     ;; A citation bracket has no (url)/[ref]/{attr} tail.

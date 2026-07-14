@@ -9,8 +9,8 @@ tags: [carve, demo]
 # Carve Sample
 
 A tour of /italic/, *bold*, /*bold italic*/, _underline_, ~strike~,
-=highlight=, ^super^, and ,,sub,, text. Forced intraword forms: H{,2,}O and
-mc{^2^} and foo{*bar*}baz.
+=highlight=, {^super^}, and {,sub,} text. Brace forms also work intraword:
+H{,2,}O and mc{^2^} and foo{*bar*}baz.
 
 ## Inline
 
