@@ -223,3 +223,35 @@ and the `face' text property at that position is returned."
 (provide 'carve-mode-tests)
 
 ;;; carve-mode-tests.el ends here
+
+(ert-deftest carve-test-brace-span-alone-on-a-line-is-not-an-attribute-line ()
+  "A forced span alone on a line is emphasis, not a block-attribute line."
+  (with-temp-buffer
+    (insert "{/a/b/}")
+    (carve-mode)
+    (font-lock-ensure)
+    (should (eq (get-text-property 2 'face) 'carve-markup-face))))
+
+(ert-deftest carve-test-block-attribute-line-still-highlights ()
+  "A real block-attribute line keeps its face."
+  (with-temp-buffer
+    (insert "{#id .class key=value}")
+    (carve-mode)
+    (font-lock-ensure)
+    (should (eq (get-text-property 2 'face) 'carve-attribute-face))))
+
+(ert-deftest carve-test-tilde-brace-without-arrow-is-strikethrough ()
+  "{~x~} with no ~> arrow is a forced strikethrough, not a substitution."
+  (with-temp-buffer
+    (insert "x{~gone~}y")
+    (carve-mode)
+    (font-lock-ensure)
+    (should (eq (get-text-property 4 'face) 'carve-markup-face))))
+
+(ert-deftest carve-test-tilde-brace-with-arrow-is-a-substitution ()
+  "{~old~>new~} keeps the critic face."
+  (with-temp-buffer
+    (insert "a {~old~>new~} b")
+    (carve-mode)
+    (font-lock-ensure)
+    (should (eq (get-text-property 5 'face) 'carve-critic-face))))
