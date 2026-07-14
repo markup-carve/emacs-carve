@@ -255,9 +255,23 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx line-start "%%" (zero-or-more not-newline) line-end)
      (0 'font-lock-comment-face))
 
-    ;; Block-attribute line: {#id .class key=val} on its own line.
-    (,(rx line-start (zero-or-more space) (group "{" (one-or-more (not (any "}"))) "}")
-          (zero-or-more space) line-end)
+    ;; Block-attribute line: {#id .class key=val} on its own line.  The payload
+    ;; is STRICT (PART 9 S14): each item is .class / #id / key=value / a bare
+    ;; key, and an identifier never starts with a digit.  Without that, any
+    ;; braced span alone on a line -- a forced `{/a/b/}`, say -- was swallowed
+    ;; here as an attribute block.
+    (,(let* ((ident '(seq (any "a-zA-Z_") (zero-or-more (any "a-zA-Z0-9_-"))))
+             (value '(or (seq "\"" (zero-or-more (not (any ?\"))) "\"")
+                         (seq "'" (zero-or-more (not (any ?'))) "'")
+                         (one-or-more (not (any " \t\"'{}")))))
+             (item `(or (seq (any ".#") ,ident)
+                        (seq ,ident (opt "=" ,value)))))
+        (rx-to-string
+         `(seq line-start (zero-or-more space)
+               (group "{" (zero-or-more space) ,item
+                      (zero-or-more (seq (one-or-more space) ,item))
+                      (zero-or-more space) "}")
+               (zero-or-more space) line-end)))
      (1 'carve-attribute-face))
 
     ;; Fenced divs and admonitions: ::: type "Title" [Label]
@@ -369,8 +383,13 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; The delimiter set is the literal chars + - ~ # (list each member
     ;; separately so `-' is not read as a range that would also swallow
     ;; brace emphasis such as `{^..^}', `{,..,}', `{=..=}').
-    (,(rx (group "{" (any "+" "-" "~" "#") (minimal-match (zero-or-more not-newline))
-                 (any "+" "-" "~" "#") "}"))
+    ;; A `{~x~}` with NO `~>` arrow is a forced strikethrough, not a
+    ;; substitution, so the tilde form requires the arrow.
+    (,(rx (group "{" (or (seq (any "+" "-" "#") (minimal-match (zero-or-more not-newline))
+                              (any "+" "-" "#"))
+                         (seq "~" (minimal-match (zero-or-more not-newline)) "~>"
+                              (minimal-match (zero-or-more not-newline)) "~"))
+                 "}"))
      (1 'carve-critic-face))
 
     ;; Brace emphasis, superscript, and subscript: {^...^} {,...,} {*...*}
