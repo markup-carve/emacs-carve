@@ -136,6 +136,12 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "energy $`E=mc^2` ok\n" "$`E=mc^2`")
            'carve-math-face)))
 
+(ert-deftest carve-test-inline-literal ()
+  "An inline literal `!`...`' is fontified with the code face."
+  (should (carve-test--face-includes
+           (carve-test--face-at "the word !`/kaet/` ok\n" "!`/kaet/`")
+           'carve-code-face)))
+
 (ert-deftest carve-test-image ()
   "An image source is fontified with the URL face."
   (should (carve-test--face-includes
