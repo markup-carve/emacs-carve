@@ -38,7 +38,7 @@
 ;; The font-lock rules cover the core Carve constructs: ATX headings, the
 ;; mnemonic inline emphasis family (`/italic/', `*bold*', `_underline_',
 ;; `~strike~', `=highlight=', and the brace forms, including superscript
-;; `{^...^}' and subscript `{,...,}'), inline and raw inline code, links,
+;; `{^...^}' and subscript `{,...,}'), inline literals, inline and raw inline code, links,
 ;; autolinks, reference links and
 ;; definitions, images, cross-references, lists (bullet, ordered, task),
 ;; definition lists, blockquotes, caption lines, fenced and raw code blocks,
@@ -368,6 +368,13 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; Inline math: $`...`
     (,(rx (group "$`" (minimal-match (zero-or-more not-newline)) "`"))
      (1 'carve-math-face))
+
+    ;; Inline literal: !`...`  (a `!' prefix on a verbatim span; renders as
+    ;; literal prose, not code -- mirrors the `$'-math prefix above).  Kept
+    ;; before the inline code span so the `!'+backtick run is claimed as one
+    ;; unit and the `!' is not left as stray prose.
+    (,(rx (group "!`" (minimal-match (zero-or-more not-newline)) "`"))
+     (1 'carve-code-face))
 
     ;; Raw inline code: `code`{=html}
     (,(rx (group "`" (minimal-match (one-or-more not-newline)) "`")
