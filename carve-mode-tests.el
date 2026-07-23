@@ -160,6 +160,12 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "hi @alice there\n" "@alice")
            'carve-mention-face)))
 
+(ert-deftest carve-test-symbol ()
+  "A `:name:' symbol shortcode at a word boundary is fontified."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a :rocket: here\n" ":rocket:")
+           'carve-symbol-face)))
+
 (ert-deftest carve-test-citation-key ()
   "The @key inside a citation group is fontified as a mention."
   (should (carve-test--face-includes
