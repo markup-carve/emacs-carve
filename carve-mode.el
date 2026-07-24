@@ -180,6 +180,11 @@ when the tool is absent, so the mode never hard-depends on it."
   "Face for `#tags'."
   :group 'carve)
 
+(defface carve-symbol-face
+  '((t :inherit font-lock-constant-face))
+  "Face for `:name:' symbol shortcodes."
+  :group 'carve)
+
 (defface carve-critic-face
   '((t :inherit font-lock-warning-face))
   "Face for CriticMarkup."
@@ -450,6 +455,11 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-mention-face))
     (,(rx (or bol space (any "([")) (group "#" (one-or-more (any "a-zA-Z0-9._-"))))
      (1 'carve-tag-face))
+
+    ;; Symbol shortcodes :name: (word boundary; first name char is a letter,
+    ;; digit, `+` or `-`, so `:+1:` / `:-1:` match but `:_x:` stays literal).
+    (,(rx (or bol space (any "([")) (group ":" (any "a-zA-Z0-9+-") (zero-or-more (any "a-zA-Z0-9_+-")) ":"))
+     (1 'carve-symbol-face))
 
     ;; Thematic break.
     (,(rx line-start (group (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_))) (zero-or-more space) line-end)
