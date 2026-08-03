@@ -46,6 +46,24 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "### Setup\n" "###")
            'carve-markup-face)))
 
+(ert-deftest carve-test-ordered-list-marker ()
+  "A valued ordered marker is a list marker."
+  (should (carve-test--face-includes
+           (carve-test--face-at "1. first\n" "1.")
+           'carve-list-marker-face)))
+
+(ert-deftest carve-test-bare-dot-ordered-marker ()
+  "A bare `.' continues an ordered sequence (carve#472), so it is a marker."
+  (should (carve-test--face-includes
+           (carve-test--face-at ". first\n. second\n" ". first")
+           'carve-list-marker-face)))
+
+(ert-deftest carve-test-bare-dot-marker-with-attributes ()
+  "A marker glued to an attribute block is still a marker."
+  (should (carve-test--face-includes
+           (carve-test--face-at ".{#x} attributed\n" ".{")
+           'carve-list-marker-face)))
+
 (ert-deftest carve-test-bold ()
   "A `*bold*' span is fontified bold."
   (should (carve-test--face-includes
