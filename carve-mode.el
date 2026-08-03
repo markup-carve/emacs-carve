@@ -292,7 +292,15 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-table-face))
 
     ;; Blockquote markers and caption lines.
-    (,(rx line-start (zero-or-more space) (group ">") )
+    ;;
+    ;; The marker takes a SPACE, or stands alone on its line. Verified against
+    ;; carve-rs: `>no space', `>>x', `>> x' and `>\tx' are all paragraphs -
+    ;; nesting is written `> > x', a space per marker, and a tab does not
+    ;; separate (markup-carve/carve#525). Without the lookahead this fontified
+    ;; the marker in `>>= operator' and `>=3 items', which the language calls
+    ;; prose.
+    (,(rx line-start (zero-or-more (in " \t")) (group ">")
+          (or " " line-end))
      (1 'carve-blockquote-face))
     (,(rx line-start (zero-or-more space) (group "^") space)
      (1 'carve-markup-face))
