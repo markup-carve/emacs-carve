@@ -139,7 +139,9 @@ number, but `. ' is still `<p>.</p>'.
 
 Only spaces and tabs separate a marker from its content, so a heading whose
 content starts with a non-ASCII space is still a heading."
-  (dolist (src '("# " "- " "1. " ". " "^ " ":: "))
+  ;; A RUN of spaces is not content either - `one-or-more not-newline' matched
+  ;; those spaces and made the separator do the content's job.
+  (dolist (src '("# " "#  " "- " "-  " "1. " ". " "^ " ":: "))
     (should-not (carve-test--face-at (concat src "\n") (substring src 0 1))))
   (should (carve-test--face-includes
            (carve-test--face-at "# H\n" "#") 'carve-markup-face))

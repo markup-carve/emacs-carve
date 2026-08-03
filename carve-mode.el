@@ -193,8 +193,13 @@ when the tool is absent, so the mode never hard-depends on it."
 ;;;; Helper matchers
 
 (defconst carve--heading-re
-  (rx line-start (group (** 1 6 ?#)) (group (one-or-more space))
-      (group (one-or-more not-newline)) line-end)
+  ;; MARKER REQUIRES CONTENT, and a RUN of spaces is not content: carve-rs
+  ;; renders `#<space><space>' as `<p>#</p>'.  `one-or-more not-newline'
+  ;; happily matched those spaces, so the separator was doing the content's
+  ;; job.  `(in " \t")' for the separator and `(not (any " \t\n"))' for the
+  ;; first content character - the newline in that set is what makes it bite.
+  (rx line-start (group (** 1 6 ?#)) (group (one-or-more (in " \t")))
+      (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
   "Match an ATX heading line (no trailing attribute blocks in Carve).")
 
 (defun carve--fontify-fenced-blocks (limit)
