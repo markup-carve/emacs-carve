@@ -304,9 +304,16 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-list-marker-face)
      (2 'carve-markup-face))
 
-    ;; Ordered list markers: 1. 1) a. i.
+    ;; Ordered list markers: 1. 1) a. i., and the BARE DOT.
+    ;;
+    ;; `.` alone continues an ordered sequence, and is the only marker allowed
+    ;; to drop its value (carve#472). The lookahead also admits a marker glued
+    ;; to an attribute block - `.{#x}`, `3.{#x k=v}` - which is how the corpus
+    ;; writes those.
     (,(rx line-start (zero-or-more space)
-          (group (or (one-or-more digit) (any "a-zA-Z")) (any ".)")) space)
+          (group (or (seq (or (one-or-more digit) (any "a-zA-Z")) (any ".)"))
+                     "."))
+          (or space "{"))
      (1 'carve-list-marker-face))
 
     ;; Bullet list markers: - * + followed by a space and content.

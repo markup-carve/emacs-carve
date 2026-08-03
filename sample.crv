@@ -41,6 +41,7 @@ Cross-reference: see </#inline>. An image with a caption:
 - [x] a finished task
 
 1. first
+. bare-dot item, continuing the same list
 2. second
 3. third
 
