@@ -302,34 +302,42 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx line-start (zero-or-more (in " \t")) (group ">")
           (or " " line-end))
      (1 'carve-blockquote-face))
-    (,(rx line-start (zero-or-more space) (group "^") space)
+    (,(rx line-start (zero-or-more (in " \t")) (group "^") (one-or-more (in " \t"))
+          (not (any " \t\n")))
      (1 'carve-markup-face))
 
     ;; Task list items: - [ ] / - [x] (marker + checkbox).
-    (,(rx line-start (zero-or-more space)
-          (group (any "-*+")) space
-          (group "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]") space)
+    ;; The checkbox needs content after it, or it does not form: carve-rs and
+    ;; carve-js both render `- [ ] ' (nothing after) as `<ul><li>[ ]</li></ul>',
+    ;; a plain bullet holding the literal `[ ]'.
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group (any "-*+")) (one-or-more (in " \t"))
+          (group "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]")
+          (one-or-more (in " \t")) (not (any " \t\n")))
      (1 'carve-list-marker-face)
      (2 'carve-markup-face))
 
     ;; Ordered list markers: 1. 1) a. i., and the BARE DOT.
     ;;
-    ;; `.` alone continues an ordered sequence, and is the only marker allowed
-    ;; to drop its value (carve#472). The lookahead also admits a marker glued
+    ;; `.` continues an ordered sequence, and is the only marker allowed to
+    ;; drop its VALUE - the number (carve#472). It still needs content:
+    ;; carve-rs renders `. ` as `<p>.</p>`, like every content-less marker. The lookahead also admits a marker glued
     ;; to an attribute block - `.{#x}`, `3.{#x k=v}` - which is how the corpus
     ;; writes those.
     (,(rx line-start (zero-or-more space)
           (group (or (seq (or (one-or-more digit) (any "a-zA-Z")) (any ".)"))
                      "."))
-          (or space "{"))
+          (or (seq (one-or-more (in " \t")) (not (any " \t\n"))) "{"))
      (1 'carve-list-marker-face))
 
     ;; Bullet list markers: - * + followed by a space and content.
-    (,(rx line-start (zero-or-more space) (group (any "-*+")) space (not (any space)))
+    (,(rx line-start (zero-or-more (in " \t")) (group (any "-*+"))
+          (one-or-more (in " \t")) (not (any " \t\n")))
      (1 'carve-list-marker-face))
 
     ;; Definition list: :: term  /  :  definition
-    (,(rx line-start (group (or "::" ":")) space)
+    (,(rx line-start (group (or "::" ":")) (one-or-more (in " \t"))
+          (not (any " \t\n")))
      (1 'carve-markup-face))
 
     ;; Footnote definition: [^id]:
