@@ -130,6 +130,33 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "> quoted line\n" ">")
            'carve-blockquote-face)))
 
+(ert-deftest carve-test-markers-need-content ()
+  "MARKER REQUIRES CONTENT (markup-carve/carve#513).
+
+A marker followed by whitespace only is prose: carve-rs renders `- ' as
+`<p>-</p>'.  The bare dot is not an exception - it may drop its VALUE, the
+number, but `. ' is still `<p>.</p>'.
+
+Only spaces and tabs separate a marker from its content, so a heading whose
+content starts with a non-ASCII space is still a heading."
+  (dolist (src '("# " "- " "1. " ". " "^ " ":: "))
+    (should-not (carve-test--face-at (concat src "\n") (substring src 0 1))))
+  (should (carve-test--face-includes
+           (carve-test--face-at "# H\n" "#") 'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n" "-") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at ". bare\n" ".") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "# \u00a0Title\n" "#") 'carve-markup-face))
+  ;; An empty task item is a plain bullet holding the literal `[ ]', with no
+  ;; checkbox: carve-rs and carve-js both render `<ul><li>[ ]</li></ul>'.
+  (should (carve-test--face-includes
+           (carve-test--face-at "- [ ] \n" "-") 'carve-list-marker-face))
+  (should-not (carve-test--face-at "- [ ] \n" "["))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- [x] done\n" "[") 'carve-markup-face)))
+
 (ert-deftest carve-test-blockquote-needs-a-space ()
   "A `>' with no space after it is prose, not a blockquote marker.
 
