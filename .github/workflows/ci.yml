@@ -27,4 +27,11 @@ jobs:
             -l ert \
             -l carve-mode.el \
             -l carve-mode-tests.el \
+            -l carve-battery-tests.el \
             -f ert-run-tests-batch-and-exit
+
+      # Separate from the tests on purpose: this reaches the network, so a
+      # failure means the vendored battery is stale (or GitHub is down), not
+      # that the mode is wrong.
+      - name: The vendored block battery still matches carve-grammars
+        run: ./tools/check-battery-drift.sh
