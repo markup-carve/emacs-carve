@@ -130,6 +130,21 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "> quoted line\n" ">")
            'carve-blockquote-face)))
 
+(ert-deftest carve-test-blockquote-needs-a-space ()
+  "A `>' with no space after it is prose, not a blockquote marker.
+
+Verified against carve-rs: `>no space', `>>x', `>> x' and `>\tx' all render as
+paragraphs.  `>>' is not a nested marker - that is written `> > x', a space per
+marker - and a tab does not separate (markup-carve/carve#525)."
+  (dolist (src '(">no space\n" ">>x\n" ">> x\n" ">\tx\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src ">")
+                 'carve-blockquote-face)))
+  ;; A bare `>' alone on its line is still a marker.
+  (should (carve-test--face-includes
+           (carve-test--face-at ">\n" ">")
+           'carve-blockquote-face)))
+
 (ert-deftest carve-test-attribute-line ()
   "A standalone `{#id .class}' line is an attribute line."
   (should (carve-test--face-includes
