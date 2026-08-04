@@ -110,6 +110,36 @@
       "why": "a tab does not separate"
     },
     {
+      "src": "#\tH",
+      "want": "none",
+      "why": "the separator is a SPACE, never a tab - corpus 176-a-marker-separator-is-a-space-never-a-tab"
+    },
+    {
+      "src": "-\ta",
+      "want": "none",
+      "why": "same rule on the bullet marker"
+    },
+    {
+      "src": "1.\ta",
+      "want": "none",
+      "why": "same rule on the ordered marker"
+    },
+    {
+      "src": "::\tx",
+      "want": "none",
+      "why": "same rule on the definition-term marker"
+    },
+    {
+      "src": "^\tcap",
+      "want": "none",
+      "why": "same rule on the caption marker"
+    },
+    {
+      "src": "-\t[x] a",
+      "want": "none",
+      "why": "a tab does not separate the bullet from its checkbox either - the engines render this as a paragraph"
+    },
+    {
       "src": "- - ",
       "want": "list"
     },
