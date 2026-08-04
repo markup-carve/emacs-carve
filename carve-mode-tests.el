@@ -46,6 +46,27 @@ and the `face' text property at that position is returned."
            (carve-test--face-at "### Setup\n" "###")
            'carve-markup-face)))
 
+(ert-deftest carve-test-thematic-break-spellings ()
+  "Every thematic-break spelling is markup, not prose.
+This one passes before the indentation fix below; it pins the column-zero
+behavior so a later rewrite of the rule cannot drop a spelling."
+  (dolist (line '("---" "***" "___"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat "a\n\n" line "\n\nb\n") line)
+             'carve-markup-face))))
+
+(ert-deftest carve-test-thematic-break-indented ()
+  "A break inside a container is still a break."
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ***\n" "***")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-frontmatter-keeps-its-own-face ()
+  "The break rule does not steal the front-matter delimiters."
+  (should (carve-test--face-includes
+           (carve-test--face-at "---\ntitle: Doc\n---\n\nText\n" "title: Doc")
+           'carve-frontmatter-face)))
+
 (ert-deftest carve-test-ordered-list-marker ()
   "A valued ordered marker is a list marker."
   (should (carve-test--face-includes

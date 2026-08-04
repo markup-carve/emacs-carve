@@ -489,8 +489,12 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx (or bol space (any "([")) (group ":" (any "a-zA-Z0-9+-") (zero-or-more (any "a-zA-Z0-9_+-")) ":"))
      (1 'carve-symbol-face))
 
-    ;; Thematic break.
-    (,(rx line-start (group (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_))) (zero-or-more space) line-end)
+    ;; Thematic break.  Leading whitespace is allowed: a break can open inside
+    ;; a container, where the content column is not zero, and Carve has no
+    ;; indented code block to disambiguate against.
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)))
+          (zero-or-more space) line-end)
      (1 'carve-markup-face))
     )
   "Font-lock keywords for `carve-mode'.")
