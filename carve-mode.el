@@ -198,7 +198,7 @@ when the tool is absent, so the mode never hard-depends on it."
   ;; happily matched those spaces, so the separator was doing the content's
   ;; job.  `(in " \t")' for the separator and `(not (any " \t\n"))' for the
   ;; first content character - the newline in that set is what makes it bite.
-  (rx line-start (group (** 1 6 ?#)) (group (one-or-more (in " \t")))
+  (rx line-start (group (** 1 6 ?#)) (group (one-or-more " "))
       (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
   "Match an ATX heading line (no trailing attribute blocks in Carve).")
 
@@ -307,7 +307,7 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx line-start (zero-or-more (in " \t")) (group ">")
           (or " " line-end))
      (1 'carve-blockquote-face))
-    (,(rx line-start (zero-or-more (in " \t")) (group "^") (one-or-more (in " \t"))
+    (,(rx line-start (zero-or-more (in " \t")) (group "^") (one-or-more " ")
           (not (any " \t\n")))
      (1 'carve-markup-face))
 
@@ -316,9 +316,9 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; carve-js both render `- [ ] ' (nothing after) as `<ul><li>[ ]</li></ul>',
     ;; a plain bullet holding the literal `[ ]'.
     (,(rx line-start (zero-or-more (in " \t"))
-          (group (any "-*+")) (one-or-more (in " \t"))
+          (group (any "-*+")) (one-or-more " ")
           (group "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]")
-          (one-or-more (in " \t")) (not (any " \t\n")))
+          (one-or-more " ") (not (any " \t\n")))
      (1 'carve-list-marker-face)
      (2 'carve-markup-face))
 
@@ -332,16 +332,16 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx line-start (zero-or-more space)
           (group (or (seq (or (one-or-more digit) (any "a-zA-Z")) (any ".)"))
                      "."))
-          (or (seq (one-or-more (in " \t")) (not (any " \t\n"))) "{"))
+          (or (seq (one-or-more " ") (not (any " \t\n"))) "{"))
      (1 'carve-list-marker-face))
 
     ;; Bullet list markers: - * + followed by a space and content.
     (,(rx line-start (zero-or-more (in " \t")) (group (any "-*+"))
-          (one-or-more (in " \t")) (not (any " \t\n")))
+          (one-or-more " ") (not (any " \t\n")))
      (1 'carve-list-marker-face))
 
     ;; Definition list: :: term  /  :  definition
-    (,(rx line-start (group (or "::" ":")) (one-or-more (in " \t"))
+    (,(rx line-start (group (or "::" ":")) (one-or-more " ")
           (not (any " \t\n")))
      (1 'carve-markup-face))
 
