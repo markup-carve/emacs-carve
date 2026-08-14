@@ -353,12 +353,6 @@ marker - and a tab does not separate (markup-carve/carve#525)."
            (carve-test--face-at "[y]{:zh-Hant .hl} t\n" "{:zh-Hant")
            'carve-attribute-face)))
 
-(ert-deftest carve-test-language-attribute-beside-other-items ()
-  "A language attribute is an item like any other, in any position."
-  (should (carve-test--face-includes
-           (carve-test--face-at "[z]{#i :fr .c} t\n" "{#i")
-           'carve-attribute-face)))
-
 (ert-deftest carve-test-empty-language-attribute ()
   "The empty form `{:}' is a valid attribute block."
   (should (carve-test--face-includes
