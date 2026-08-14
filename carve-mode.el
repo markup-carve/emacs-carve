@@ -274,7 +274,16 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
              (value '(or (seq "\"" (zero-or-more (not (any ?\"))) "\"")
                          (seq "'" (zero-or-more (not (any ?'))) "'")
                          (one-or-more (not (any " \t\"'{}")))))
-             (item `(or (seq (any ".#") ,ident)
+             ;; The language attribute (markup-carve/carve#1114): a colon, then
+             ;; an optional tag of 1-8 alphanumeric subtags joined by hyphens.
+             ;; It is the ONE item that opens with a colon, and the payload here
+             ;; is validated as a whole, so an item the alternation does not know
+             ;; leaves the entire line unfontified rather than losing one token.
+             (lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
+                                            (zero-or-more
+                                             (seq "-" (repeat 1 8 (any "a-zA-Z0-9"))))))))
+             (item `(or ,lang-item
+                        (seq (any ".#") ,ident)
                         (seq ,ident (opt "=" ,value)))))
         (rx-to-string
          `(seq line-start (zero-or-more space)
@@ -440,7 +449,21 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (0 'carve-markup-face))
 
     ;; Inline attribute block attached to a node: {.class #id key=val}
-    (,(rx (group "{" (any ".#") (one-or-more (not (any "}{"))) "}"))
+    ;;
+    ;; The language branch is spelled out rather than folded into the leading
+    ;; `.#' class, because Emacs regexps have no lookahead and the tag has a
+    ;; LENGTH limit: a subtag is at most eight characters, so `{:toolongtag}'
+    ;; is prose.  Letting the trailing `}' do the anchoring is what rejects it -
+    ;; the tag can only be followed by the closing brace or by a further item.
+    (,(let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
+                                           (zero-or-more
+                                            (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
+        (rx-to-string
+         `(group "{" (or (seq (any ".#") (one-or-more (not (any "}{"))))
+                         (seq ,lang-item
+                              (opt (seq (one-or-more (any " \t"))
+                                        (one-or-more (not (any "}{")))))))
+                 "}")))
      (1 'carve-attribute-face))
 
     ;; Bare emphasis delimiters (word-boundary approximation).
