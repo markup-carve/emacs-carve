@@ -367,6 +367,16 @@ take the first eight characters and fontify a partial block."
   (should-not (carve-test--face-at "[x]{:toolongtag} t\n" "{:toolongtag}"))
   (should-not (carve-test--face-at "{:toolongtag}\n" "{:toolongtag}")))
 
+(ert-deftest carve-test-inline-attribute-block-does-not-cross-a-line ()
+  "An inline attribute block may not span lines.
+Only the standalone attribute LINE continues (markup-carve/carve#897).
+Without excluding the newline, an unclosed block ran on through the prose
+below it to the next `}\=' anywhere in the buffer.  Both branches of the
+rule are checked, because both carried the same payload class."
+  (should-not (carve-test--face-at "[x]{:fr item\nprose}\n" "{:fr"))
+  (should-not (carve-test--face-at "[x]{.c item\nprose}\n" "{.c"))
+  (should-not (carve-test--face-at "[x]{#i item\nprose}\n" "{#i")))
+
 (ert-deftest carve-test-tilde-brace-without-arrow-is-strikethrough ()
   "{~x~} with no ~> arrow is a forced strikethrough, not a substitution."
   (with-temp-buffer

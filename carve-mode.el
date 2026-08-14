@@ -455,14 +455,19 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; LENGTH limit: a subtag is at most eight characters, so `{:toolongtag}'
     ;; is prose.  Letting the trailing `}' do the anchoring is what rejects it -
     ;; the tag can only be followed by the closing brace or by a further item.
+    ;;
+    ;; The payload excludes the newline in both branches.  An INLINE block may
+    ;; not cross a line (markup-carve/carve#897 - only the standalone attribute
+    ;; LINE continues), and without that exclusion an unclosed block ran on
+    ;; through the prose below it to the next `}' anywhere in the buffer.
     (,(let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
                                            (zero-or-more
                                             (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
         (rx-to-string
-         `(group "{" (or (seq (any ".#") (one-or-more (not (any "}{"))))
+         `(group "{" (or (seq (any ".#") (one-or-more (not (any "}{\n"))))
                          (seq ,lang-item
                               (opt (seq (one-or-more (any " \t"))
-                                        (one-or-more (not (any "}{")))))))
+                                        (one-or-more (not (any "}{\n")))))))
                  "}")))
      (1 'carve-attribute-face))
 
