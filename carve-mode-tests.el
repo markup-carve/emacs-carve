@@ -392,3 +392,89 @@ rule are checked, because both carried the same payload class."
     (carve-mode)
     (font-lock-ensure)
     (should (eq (get-text-property 5 'face) 'carve-critic-face))))
+
+;;; Composite figures (PART 9 §4c, markup-carve/carve#1215).
+;;
+;; A BARE `::: figure' opener - the fence, its separator, the word `figure',
+;; and nothing else - is ONE figure of ordered panels; an opener carrying a
+;; quoted title or a `[label]' is not that production and stays the generic
+;; container.  The distinction lives entirely in the tail of one line, so the
+;; controls below are the point of these tests, not padding: a rule that never
+;; reaches them would pass the positive test on its own.
+
+(ert-deftest carve-test-bare-figure-is-a-composite-figure ()
+  "A bare `::: figure' opener takes the composite-figure face, not the div one."
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: figure\n![a](a.png)\n:::\n" ":::")
+           'carve-figure-group-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: figure\n![a](a.png)\n:::\n" "figure")
+           'carve-figure-group-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "::: figure\n![a](a.png)\n:::\n" "figure")
+               'carve-admonition-face)))
+
+(ert-deftest carve-test-figure-with-title-is-a-generic-container ()
+  "`::: figure \"T\"' is not a composite figure; it stays the generic container."
+  (let ((src "::: figure \"A titled figure div\"\nbody\n:::\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "figure")
+             'carve-admonition-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "figure")
+                 'carve-figure-group-face))))
+
+(ert-deftest carve-test-figure-with-label-is-a-generic-container ()
+  "`::: figure [g]' is not a composite figure either."
+  (let ((src "::: figure [g]\nbody\n:::\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "figure")
+             'carve-admonition-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "figure")
+                 'carve-figure-group-face))))
+
+(ert-deftest carve-test-tab-separated-figure-is-a-generic-container ()
+  "The separator is a SPACE run, never a tab.
+Grammar PART 7, MARKER SEPARATORS; corpus 254 renders `:::<TAB>note' as a
+paragraph.  Spelling the rule with `space' - which is `[[:space:]]' in `rx',
+and what the generic rule beside it uses - would give this line the composite
+face."
+  (let ((src ":::\tfigure\nbody\n:::\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "figure")
+             'carve-admonition-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "figure")
+                 'carve-figure-group-face))))
+
+(ert-deftest carve-test-figure-trailing-whitespace-is-insignificant ()
+  "Trailing whitespace after the kind word does not spoil a bare opener."
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: figure\t\nbody\n:::\n" "figure")
+           'carve-figure-group-face)))
+
+(ert-deftest carve-test-other-container-kinds-are-unchanged ()
+  "Only `figure' is reserved; every other kind word keeps the div face."
+  (dolist (kind '("note" "warning" "figures" "figure-panel"))
+    (let ((src (concat "::: " kind "\nbody\n:::\n")))
+      (should (carve-test--face-includes
+               (carve-test--face-at src kind)
+               'carve-admonition-face))
+      (should-not (carve-test--face-includes
+                   (carve-test--face-at src kind)
+                   'carve-figure-group-face)))))
+
+(ert-deftest carve-test-group-caption-after-the-closer-is-a-caption ()
+  "The group caption is an ordinary `^ ' line below the CLOSING fence.
+It needs no rule of its own - the caption rule already claims it - and that
+claim is an OVER-APPROXIMATION that stays one: a `^ ' line after any other
+`:::' closer gets the same face, because no rule in this file has container
+state.  Both halves are asserted so the limit is recorded rather than
+rediscovered."
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: figure\n![a](a.png)\n:::\n^ A caption\n" "^ A caption")
+           'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: note\nbody\n:::\n^ A caption\n" "^ A caption")
+           'carve-markup-face)))

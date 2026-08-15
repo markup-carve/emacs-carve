@@ -150,6 +150,16 @@ when the tool is absent, so the mode never hard-depends on it."
   "Face for `:::' div and admonition fences."
   :group 'carve)
 
+(defface carve-figure-group-face
+  '((t :inherit font-lock-function-name-face :weight bold))
+  "Face for a bare `::: figure' composite-figure opener.
+A composite figure is a different construct from the generic container
+`carve-admonition-face' marks, not a flavor of it (PART 9 §4c), so it takes
+its own face rather than sharing that one.  Only the OPENER carries it: the
+closing fence is a bare `:::' line, and which container it closes is not
+something a per-line rule can know, so it keeps `carve-admonition-face'."
+  :group 'carve)
+
 (defface carve-table-face
   '((t :inherit font-lock-type-face))
   "Face for table pipes and header markers."
@@ -292,6 +302,46 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
                       (zero-or-more space) "}")
                (zero-or-more space) line-end)))
      (1 'carve-attribute-face))
+
+    ;; Composite figure: a BARE `::: figure' opener (PART 9 §4c,
+    ;; markup-carve/carve#1215; tracked as markup-carve/carve-grammars#222).
+    ;;
+    ;; The kind word `figure' is RESERVED among the `:::' types: a bare opener -
+    ;; the fence, its separator, the word `figure', and NOTHING else - is ONE
+    ;; figure of ordered panels, a different construct from the generic
+    ;; container, so it gets its own face.  This sits BEFORE the generic div rule
+    ;; because `font-lock-keywords' are applied in order and a later keyword does
+    ;; not override a face an earlier one already applied.
+    ;;
+    ;; THE TAIL OF THE LINE IS THE WHOLE DISTINCTION.  An opener carrying a
+    ;; quoted title or a `[label]' (`::: figure "T"', `::: figure [g]') is not
+    ;; this production at all and falls through to the rule below, which is the
+    ;; generic container the clause says it stays - unchanged, metadata and all.
+    ;;
+    ;; THE SEPARATOR IS A SPACE RUN, never a tab (grammar.ebnf PART 7, MARKER
+    ;; SEPARATORS; corpus 254 renders `:::<TAB>note' as a paragraph).  So it is
+    ;; `(one-or-more " ")' and deliberately NOT the `(zero-or-more space)' the
+    ;; generic rule below uses - `space' in `rx' is `[[:space:]]', which admits a
+    ;; tab.  A tab-separated `:::<TAB>figure' therefore falls to that rule and
+    ;; reads exactly as it did before this one existed.  Trailing whitespace
+    ;; after the kind word is insignificant and may be a tab.
+    ;;
+    ;; RESIDUAL, written down rather than left to be rediscovered: GROUPS DO NOT
+    ;; NEST - a bare `::: figure' at any depth inside an open group is a generic
+    ;; container - and this rule cannot see that, because every rule in this list
+    ;; is a flat per-line regexp with no container state, so a nested bare opener
+    ;; over-fontifies as a group.  Same limit applies to the group caption: the
+    ;; `^ ' line below the CLOSING fence is a caption only for this container
+    ;; kind, and the caption rule further down claims it after any `:::' closer.
+    ;; It has always done so, which is why the caption position already works
+    ;; here; making it exact needs a real container model, which is
+    ;; tree-sitter-carve's job rather than font-lock's.
+    (,(rx line-start (group (>= 3 ?:))
+          (one-or-more " ")
+          (group "figure")
+          (zero-or-more (in " \t")) line-end)
+     (1 'carve-figure-group-face)
+     (2 'carve-figure-group-face))
 
     ;; Fenced divs and admonitions: ::: type "Title" [Label]
     (,(rx line-start (group (>= 3 ?:))

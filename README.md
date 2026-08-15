@@ -85,6 +85,14 @@ of edge cases (intraword literals, unmatched openers spanning lines) may be
 highlighted slightly more or less eagerly than the renderer would parse them.
 The fontification is a reading aid, not a parser.
 
+Every rule here is a per-line regexp with no container state, which shows up in
+two places around composite figures (`::: figure`, PART 9 §4c). A bare
+`::: figure` nested inside an open figure group is a generic container in the
+language, but `carve-mode` fontifies it as a group. And the `^ ` caption line
+below a closing fence is a caption only after a `::: figure` closer; the mode
+fontifies it after any `:::` closer. Both are over-approximations rather than
+missing highlighting, and both need a real container model to fix.
+
 ## License
 
 MIT. See [LICENSE](LICENSE). Copyright (c) 2026 markup-carve.
