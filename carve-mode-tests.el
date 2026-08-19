@@ -127,6 +127,27 @@ behavior so a later rewrite of the rule cannot drop a spelling."
            (carve-test--face-at "%% a line comment\n" "a line comment")
            'font-lock-comment-face)))
 
+(ert-deftest carve-test-inline-comment ()
+  "A `{% ... %}' run is a comment (markup-carve/carve#1239)."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a {% hidden note %} b\n" "hidden note")
+           'font-lock-comment-face)))
+
+(ert-deftest carve-test-inline-comment-hides-emphasis ()
+  "Emphasis inside an inline comment is not fontified as emphasis."
+  (should (carve-test--face-includes
+           (carve-test--face-at "{% *not bold* %}\n" "not bold")
+           'font-lock-comment-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "{% *not bold* %}\n" "not bold")
+               'carve-bold-face)))
+
+(ert-deftest carve-test-inline-comment-inside-code-stays-code ()
+  "A `{%' inside a code span stays code."
+  (should (carve-test--face-includes
+           (carve-test--face-at "`{% stays code %}`\n" "stays code")
+           'carve-code-face)))
+
 (ert-deftest carve-test-link-url ()
   "A link URL is fontified with the URL face."
   (should (carve-test--face-includes
