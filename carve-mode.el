@@ -42,7 +42,7 @@
 ;; autolinks, reference links and
 ;; definitions, images, cross-references, lists (bullet, ordered, task),
 ;; definition lists, blockquotes, caption lines, fenced and raw code blocks,
-;; `%%' comments, fenced divs and admonitions, block-attribute lines, tables,
+;; `%%' and `{%..%}' comments, fenced divs and admonitions, block-attribute lines, tables,
 ;; footnotes, math, frontmatter, mentions, tags, and CriticMarkup.
 ;;
 ;; Carve is a young language; some constructs (notably the word-boundary rules
@@ -477,6 +477,17 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; Inline code span: `code`
     (,(rx (group "`" (minimal-match (one-or-more (not (any "`")))) "`"))
      (1 'carve-code-face keep))
+
+    ;; A DELIMITED INLINE COMMENT, `{% ... %}' (PART 9 S21a,
+    ;; markup-carve/carve#1239).  It hides its payload the way `%%' hides the
+    ;; rest of a line, so the whole run takes the comment face and the emphasis
+    ;; rules below never reach inside: `{% *not bold* %}' must not colour a bold
+    ;; run.  It sits AFTER the inline code span rule on purpose -- font-lock
+    ;; applies keywords in order and does not override a face already set, so a
+    ;; `{%' inside `` ` `` stays code -- and BEFORE the emphasis rules, so the
+    ;; payload is claimed before they see it.
+    (,(rx "{%" (minimal-match (zero-or-more not-newline)) "%}")
+     (0 'font-lock-comment-face))
 
     ;; CriticMarkup: {+ins+} {-del-} {~old~>new~} {# comment #}
     ;; The delimiter set is the literal chars + - ~ # (list each member
