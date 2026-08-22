@@ -92,7 +92,3 @@ language, but `carve-mode` fontifies it as a group. And the `^ ` caption line
 below a closing fence is a caption only after a `::: figure` closer; the mode
 fontifies it after any `:::` closer. Both are over-approximations rather than
 missing highlighting, and both need a real container model to fix.
-
-## License
-
-MIT. See [LICENSE](LICENSE). Copyright (c) 2026 markup-carve.
