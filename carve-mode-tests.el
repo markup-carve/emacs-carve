@@ -808,3 +808,109 @@ different rule again."
   (should (carve-test--face-includes
            (carve-test--face-at "see [@key] here\n" "[@key")
            'carve-mention-face)))
+
+;;; A percent run only opens a comment where the language has one
+;;; (markup-carve/emacs-carve#22).
+;;
+;; The syntax table gives `%' the comment-start flags, so `%%' opened a comment
+;; to end of line ANYWHERE.  Syntactic fontification runs before the keywords
+;; and the keywords are non-override, so no rule below could take the region
+;; back - which is why the fix is a `syntax-propertize-function' and why these
+;; tests assert the FACE of the payload rather than the presence of a rule.
+;;
+;; Every shape is asserted twice where a column can change it: at column zero
+;; and again at a container's content column, because a construct that only
+;; works at column zero is the failure this mode has shipped before.
+
+(ert-deftest carve-test-percent-in-a-code-span-is-not-a-comment ()
+  "A code span's payload is verbatim, so a `%%' in it opens nothing."
+  (dolist (src '("a `x %% y` z\n" "- item\n\n  a `x %% y` z\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "%%") 'carve-code-face))
+    ;; The closing backtick and the tail of the line are outside the span, so
+    ;; a comment that swallowed them would show up here.
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "z") 'font-lock-comment-face))))
+
+(ert-deftest carve-test-percent-in-a-verbatim-prefix-run-is-not-a-comment ()
+  "The math, literal and raw spellings of a backtick run protect it too.
+Each one lost its OWN face as well before this: the comment face was already
+on the payload when the keywords ran, so the math rule could not apply."
+  (dolist (case '(("a $`x %% y` z\n" . carve-math-face)
+                  ("a $$`x %% y` z\n" . carve-math-face)
+                  ("a !`x %% y` z\n" . carve-code-face)
+                  ("a `<i>%%</i>`{=html} z\n" . carve-code-face)))
+    (should (carve-test--face-includes
+             (carve-test--face-at (car case) "%%") (cdr case)))))
+
+(ert-deftest carve-test-percent-in-a-fenced-body-is-payload ()
+  "A fenced body is verbatim, at column zero and at a content column."
+  (dolist (src '("```\na %% b\n```\n" "- item\n\n  ```\n  a %% b\n  ```\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "%%") 'carve-code-face))))
+
+(ert-deftest carve-test-percent-in-a-link-does-not-kill-the-link ()
+  "A `%%' in a label or a destination leaves the link a link.
+The engine renders `a [x %% y](u) z' as a link followed by `z'; the comment
+took the label, the destination, the parentheses and the tail of the line."
+  (dolist (src '("a [x %% y](u) z\n" "a ![x %% y](u) z\n" "a [x](u%%v) z\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "u") 'carve-url-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "z") 'font-lock-comment-face)))
+  ;; ... and the payload has to CLOSE for the bracket run to be one of those.
+  ;; `a [x %% y](u z' is no link, and the engine renders it `a [x' - the
+  ;; comment reaching the end of the line after all.
+  (dolist (src '("a [x %% y](u z\n" "a [x %% y][r z\n" "a [x %% y]{.c z\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "%% y") 'font-lock-comment-delimiter-face))))
+
+(ert-deftest carve-test-percent-in-an-autolink-is-part-of-the-url ()
+  "An autolink's text IS its destination, so a percent-encoded path is URL."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a <https://e.com/a%%b> z\n" "%%")
+           'carve-url-face)))
+
+(ert-deftest carve-test-percent-needs-whitespace-before-it ()
+  "`50%%' is literal text: a comment marker is preceded by whitespace.
+Spec, \"Comments\": without preceding whitespace `%%' stays literal, which is
+what keeps a percentage safe."
+  (dolist (src '("a 50%% off\n" "a x%%y z\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "%%") 'font-lock-comment-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "%%") 'font-lock-comment-delimiter-face))))
+
+(ert-deftest carve-test-escaped-percent-is-not-a-comment ()
+  "`\\%%' is an escaped percent, so the run cannot open a comment."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a \\%% b\n" "b") 'font-lock-comment-face)))
+
+(ert-deftest carve-test-percent-in-an-unpartnered-run-is-not-a-comment ()
+  "An unpartnered backtick run is a span to the end of its PARAGRAPH.
+So a `%%' after it is inside the span and opens nothing - and the paragraph is
+the bound, not the line: the next line is inside the run and the one after the
+blank line is not.
+
+The face asserted is the DELIMITER face, because that is what a `%%' run takes
+when it opens a comment; the payload face is a separate question, and it is
+the one markup-carve/emacs-carve#21 is about."
+  (let ((src "a `x %% y\nb %% c\n\nd %% e\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "%% y") 'font-lock-comment-delimiter-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "%% c") 'font-lock-comment-delimiter-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "%% e") 'font-lock-comment-delimiter-face))))
+
+(ert-deftest carve-test-a-comment-is-still-a-comment ()
+  "The narrowing does not take the comment constructs with it.
+A comment line at column zero and at a content column, a trailing comment
+after prose, and the two delimiter lines of a comment fence."
+  (dolist (src '("%% hidden\n" "- item\n\n  %% hidden\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "hidden") 'font-lock-comment-face)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "x %% note\n" "note") 'font-lock-comment-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "%%%\nbody\n%%%\n" "body") 'font-lock-comment-face)))
