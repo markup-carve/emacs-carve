@@ -970,9 +970,11 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
 ;;                   would add is already in the character.  This is the one
 ;;                   entry here that is a judgement rather than an obstacle -
 ;;                   the whole rest of the typographic family IS painted above,
-;;                   and adding this one is one regexp.  The call is on the
-;;                   record as markup-carve/emacs-carve#23 rather than only
-;;                   here, so it can be overturned in one commit.
+;;                   and adding this one is one regexp.  RULED, not pending:
+;;                   markup-carve/emacs-carve#23 settled it as a deliberate
+;;                   non-rule, which is why the ledger row is UNSUPPORTED with
+;;                   this reason rather than a GAP waiting on someone.  One
+;;                   regexp and a row edit overturn it if the call changes.
 ;; NOT ON THIS LIST, because they are over-approximations rather than gaps:
 ;; every block opener here allows a leading indent, and a per-line rule cannot
 ;; tell a container's content column from a stray indent at the top level,
