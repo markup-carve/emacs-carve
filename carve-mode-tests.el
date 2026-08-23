@@ -341,12 +341,15 @@ marker - and a tab does not separate (markup-carve/carve#525)."
 ;;; carve-mode-tests.el ends here
 
 (ert-deftest carve-test-brace-span-alone-on-a-line-is-not-an-attribute-line ()
-  "A forced span alone on a line is emphasis, not a block-attribute line."
+  "A forced span alone on a line is emphasis, not a block-attribute line.
+The face is the ITALIC one, not the generic markup face it used to be: the
+braced spellings are now one rule each, so each carries the face of the mark
+it means (markup-carve/emacs-carve#19)."
   (with-temp-buffer
     (insert "{/a/b/}")
     (carve-mode)
     (font-lock-ensure)
-    (should (eq (get-text-property 2 'face) 'carve-markup-face))))
+    (should (eq (get-text-property 2 'face) 'carve-italic-face))))
 
 (ert-deftest carve-test-block-attribute-line-still-highlights ()
   "A real block-attribute line keeps its face."
@@ -399,12 +402,14 @@ rule are checked, because both carried the same payload class."
   (should-not (carve-test--face-at "[x]{#i item\nprose}\n" "{#i")))
 
 (ert-deftest carve-test-tilde-brace-without-arrow-is-strikethrough ()
-  "{~x~} with no ~> arrow is a forced strikethrough, not a substitution."
+  "{~x~} with no ~> arrow is a forced strikethrough, not a substitution.
+It now carries the STRIKE face rather than the generic markup face, which is
+what this test always said it was."
   (with-temp-buffer
     (insert "x{~gone~}y")
     (carve-mode)
     (font-lock-ensure)
-    (should (eq (get-text-property 4 'face) 'carve-markup-face))))
+    (should (eq (get-text-property 4 'face) 'carve-strike-face))))
 
 (ert-deftest carve-test-tilde-brace-with-arrow-is-a-substitution ()
   "{~old~>new~} keeps the critic face."
@@ -499,3 +504,270 @@ rediscovered."
   (should (carve-test--face-includes
            (carve-test--face-at "::: note\nbody\n:::\n^ A caption\n" "^ A caption")
            'carve-markup-face)))
+
+;;; The construct ledger (markup-carve/emacs-carve#19).
+;;
+;; Every test below was written from a MEASUREMENT of what this mode did with
+;; the construct, not from the ledger's claim about it: the ledger is the thing
+;; under audit.  Each one pins a row that was red - a construct with no rule at
+;; all, a construct claimed by a rule about a different construct, or a payload
+;; nobody had measured.
+;;
+;; Where a construct is deliberately NOT fontified, the reason is written in
+;; carve-mode.el under "Constructs this mode does not fontify, and why" rather
+;; than asserted here: a test that pins the absence of a face would fail the
+;; day someone implements it, which is the wrong signal.
+
+(ert-deftest carve-test-local-hard-break-block ()
+  "`::: \\' is a recognized `:::' type, and its backslash is part of the opener."
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: \\\na\nb\n:::\n" "\\")
+           'carve-admonition-face))
+  ;; ... and inside a container, where the content column is not zero.
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ::: \\\n  a\n  :::\n" "\\")
+           'carve-admonition-face)))
+
+(ert-deftest carve-test-line-block-pipe-is-not-a-table ()
+  "An indented `::: |' is a verse container, not a one-column table.
+The table rule matched the pipe of an INDENTED line block, so a container
+opener came back scoped as a cell delimiter."
+  (let ((src "- item\n\n  ::: |\n  a\n  :::\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "|")
+             'carve-admonition-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "|")
+                 'carve-table-face))))
+
+(ert-deftest carve-test-raw-block-format-token ()
+  "A raw fence's `=FORMAT' token is an attribute; a code fence has none."
+  (should (carve-test--face-includes
+           (carve-test--face-at "```=html\n<b>x</b>\n```\n" "=html")
+           'carve-attribute-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "``` python\nx = 1\n```\n" "python")
+           'carve-code-face)))
+
+(ert-deftest carve-test-fence-shaped-line-in-a-payload-is-not-a-raw-opener ()
+  "The format token cannot fire inside another block's verbatim body.
+This is why it is a group of the fence matcher rather than a rule of its own:
+a rule matching the same shape would paint the `=html' on this line, which is
+payload rather than an opener."
+  (should (carve-test--face-includes
+           (carve-test--face-at "~~~\n```=html\n~~~\n" "=html")
+           'carve-code-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "~~~\n```=html\n~~~\n" "=html")
+               'carve-attribute-face)))
+
+(ert-deftest carve-test-indented-fence-is-a-fence ()
+  "A fence at a container's content column is a fence, not two backticks.
+The opener was anchored at column zero, so an indented fence fell through to
+the INLINE code-span rule: it took the third backtick as a span opener and ran
+across the body, leaving two backticks as prose."
+  (let ((src "- item\n\n  ```\n  a\n  ```\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "```") 'carve-code-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "  a") 'carve-code-face))))
+
+(ert-deftest carve-test-comment-block-payload-is-inert ()
+  "The body of a `%%%' fence is a comment, not Carve.
+The syntax table made each FENCE line a comment and left the lines between
+them ordinary text, so an emphasis run inside a block that renders nothing
+came back bold - the buffer claimed something the document does not say."
+  (should (carve-test--face-includes
+           (carve-test--face-at "%%%\na *b* c\n%%%\n" "*b*")
+           'font-lock-comment-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "%%%\na *b* c\n%%%\n" "*b*")
+               'carve-bold-face)))
+
+(ert-deftest carve-test-unclosed-comment-fence-does-not-swallow-the-buffer ()
+  "A `%%%' run with no closer is a comment LINE (PART 9 section 28).
+So the emphasis two lines below it is still emphasis."
+  (should (carve-test--face-includes
+           (carve-test--face-at "%%%\nbody\n\nafter *b*\n" "*b*")
+           'carve-bold-face)))
+
+(ert-deftest carve-test-abbreviation-definition ()
+  "`*[TERM]: expansion' is a definition line, at any content column."
+  (should (carve-test--face-includes
+           (carve-test--face-at "*[HTML]: HyperText Markup Language\n" "*[HTML]:")
+           'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  *[HTML]: HyperText\n" "*[HTML]:")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-abbreviation-term-is-one-alphanumeric-word ()
+  "A term holding punctuation or a space is not a definition (grammar PART 5)."
+  (should-not (carve-test--face-at "*[e.g.]: for example\n" "*[e.g.]"))
+  (should-not (carve-test--face-at "*[HTTP API]: an interface\n" "*[HTTP API]")))
+
+(ert-deftest carve-test-definitions-at-a-content-column ()
+  "A reference and a footnote definition open inside a container too."
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  [ref]: https://e.com\n" "[ref]:")
+           'carve-footnote-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  [^a]: note\n" "[^a]:")
+           'carve-footnote-face)))
+
+(ert-deftest carve-test-reference-image-is-an-image ()
+  "`![alt][ref]' is a reference IMAGE, `!' included.
+It was claimed by the reference LINK rule, which starts one character to the
+right, so the `!' was left as prose and the run read as a link."
+  (should (carve-test--face-includes
+           (carve-test--face-at "see ![alt][ref] here\n" "![")
+           'carve-markup-face))
+  ;; The collapsed spelling is the same rule with an empty label.
+  (should (carve-test--face-includes
+           (carve-test--face-at "see ![ref][] here\n" "![")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-escaped-char ()
+  "A backslash before ASCII punctuation is markup, and the pair is literal."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a \\*not bold\\* b\n" "\\*")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-escaped-delimiter-cannot-open-emphasis ()
+  "An escaped `*' does not open a bold run.
+Claiming the pair is what enforces it: font-lock does not override a face an
+earlier keyword set, so the delimiter can no longer start a run."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a \\*x* b\n" "x")
+               'carve-bold-face)))
+
+(ert-deftest carve-test-escape-inside-a-code-span-is-content ()
+  "Inside a code span a backslash is payload, so the code rule keeps it."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a `x \\* y` z\n" "\\*")
+           'carve-code-face)))
+
+(ert-deftest carve-test-hard-break ()
+  "A trailing backslash is the one inline mark that renders to nothing."
+  (should (carve-test--face-includes
+           (carve-test--face-at "line one\\\nline two\n" "\\")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-bold-italic ()
+  "`/*x*/' is one construct with two marks, not a plain italic."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a /*both*/ b\n" "/*both*/")
+           'carve-bold-italic-face)))
+
+(ert-deftest carve-test-forced-spellings-carry-their-own-mark ()
+  "Each braced spelling takes the face of the mark it means.
+One rule keyed on a back-reference could not tell which delimiter it had
+matched, so a forced bold read the same as a forced strikethrough."
+  (dolist (case '(("a{*x*}b" . carve-bold-face)
+                  ("a{/x/}b" . carve-italic-face)
+                  ("a{_x_}b" . carve-underline-face)
+                  ("a{~x~}b" . carve-strike-face)
+                  ("a{=x=}b" . carve-highlight-face)
+                  ("a{^x^}b" . carve-markup-face)
+                  ("a{,x,}b" . carve-markup-face)))
+    (should (carve-test--face-includes
+             (carve-test--face-at (car case) (substring (car case) 1 6))
+             (cdr case)))))
+
+(ert-deftest carve-test-empty-brace-pair-is-text ()
+  "An empty brace pair renders literally (markup-carve/carve#1447).
+`{--}' is the one exception and is tested with the dashes below."
+  (dolist (pair '("{++}" "{##}" "{^^}" "{**}"))
+    (should-not (carve-test--face-at (concat "a " pair " b\n") pair))))
+
+(ert-deftest carve-test-editorial-markup-still-highlights ()
+  "Requiring content did not cost the four editorial spellings their face."
+  (dolist (span '("{+ins+}" "{-del-}" "{~old~>new~}" "{# note #}"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat "a " span " b\n") span)
+             'carve-critic-face))))
+
+(ert-deftest carve-test-extension-inline ()
+  "`:name[content]' is an inline extension; a digit-first name is prose."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a :kbd[Ctrl] b\n" ":kbd[")
+           'carve-markup-face))
+  (should-not (carve-test--face-at "a :1[x] b\n" ":1[")))
+
+(ert-deftest carve-test-smart-typography ()
+  "Every run the renderer replaces carries the typographic face."
+  (dolist (run '("---" "--" "..." "-->" "<--" "<-->" "<=>" "<==" "==>"
+                 "!=" "<=" ">=" "(c)" "(r)" "(tm)" "+-" "{--}"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat "a " run " b\n") run)
+             'carve-typographic-face))))
+
+(ert-deftest carve-test-braced-en-dash-is-not-a-deletion ()
+  "`{--}' is an EN DASH, not an empty deletion (markup-carve/carve#1447).
+The deletion rule owned the spelling, so a dash came back as editorial
+markup - a claim that the author deleted something."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a {--} b\n" "{--}")
+               'carve-critic-face)))
+
+(ert-deftest carve-test-hyphen-run-opening-a-word-is-a-flag ()
+  "A run with whitespace before it and a word after it stays literal.
+That is what keeps `git log --oneline' a flag (markup-carve/carve#1443)."
+  (should-not (carve-test--face-at "git log --oneline\n" "--oneline"))
+  (should-not (carve-test--face-at "run --force-with-lease now\n" "--force"))
+  ;; A numeric range is left-flanked by content, so it converts.
+  (should (carve-test--face-includes
+           (carve-test--face-at "pages 1--10\n" "--")
+           'carve-typographic-face))
+  ;; So does a trailing run on an interrupted clause.
+  (should (carve-test--face-includes
+           (carve-test--face-at "wait--- then\n" "---")
+           'carve-typographic-face)))
+
+(ert-deftest carve-test-typography-does-not-reach-into-a-payload ()
+  "A dash inside a verbatim run is payload, and the earlier rule keeps it.
+The typography rules come last for this reason, so each of these is a
+regression test on the ORDER as much as on the rule."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a `x -- y` z\n" "--") 'carve-code-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a $`x -- y` z\n" "--") 'carve-math-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a <https://e.com/a--b> z\n" "--") 'carve-url-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "%% a -- b\n" "--") 'font-lock-comment-face))
+  ;; ... and a thematic break is a break, not an em dash.
+  (should (carve-test--face-includes
+           (carve-test--face-at "a\n\n---\n\nb\n" "---") 'carve-markup-face)))
+
+(ert-deftest carve-test-verbatim-payloads-are-inert ()
+  "No inline rule reaches inside a payload that is not Carve.
+One sample per construct with a live emphasis marker in the payload; the
+positive half of each pair is what keeps the negative honest, because a
+negative alone passes just as well when the search lands somewhere else."
+  (dolist (case '(("```\na *b* c\n```\n" . carve-code-face)
+                  ("```=html\na *b* c\n```\n" . carve-code-face)
+                  ("%%%\na *b* c\n%%%\n" . font-lock-comment-face)
+                  ("%% a *b* c\n" . font-lock-comment-face)
+                  ("x %% a *b* c\n" . font-lock-comment-face)
+                  ("a `x *b* y`{=html} z\n" . carve-code-face)
+                  ("a !`x *b* y` z\n" . carve-code-face)
+                  ("a `x *b* y` z\n" . carve-code-face)
+                  ("a <https://e.com/x*b*y> z\n" . carve-url-face)
+                  ("a $`x *b* y` z\n" . carve-math-face)
+                  ("a $$`x *b* y` z\n" . carve-math-face)
+                  ("a {% x *b* y %} z\n" . font-lock-comment-face)
+                  ("a {# x *b* y #} z\n" . carve-critic-face)))
+    (should (carve-test--face-includes
+             (carve-test--face-at (car case) "*b*") (cdr case)))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (car case) "*b*") 'carve-bold-face))))
+
+(ert-deftest carve-test-heading-at-a-content-column ()
+  "A heading opens at its container's content column too."
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  # Head\n" "Head")
+           'carve-heading-face))
+  ;; ... and a `#' inside a fenced body is still payload.
+  (should (carve-test--face-includes
+           (carve-test--face-at "```\n# not a heading\n```\n" "# not")
+           'carve-code-face)))

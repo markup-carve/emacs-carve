@@ -20,24 +20,42 @@ files.
   `~strike~`, `=highlight=`, plus the brace forms `{*...*}`, `{/.../}`,
   `{_..._}`, `{~...~}`, `{=...=}` and the brace-only superscript `{^super^}`
   and subscript `{,sub,}` (a bare `^` or `,` is literal text).
-- Inline code `` `code` `` and raw inline `` `x`{=html} ``.
+- Inline code `` `code` ``, raw inline `` `x`{=html} ``, the inline literal
+  ``!`x` ``, and escaped characters `\*` (the pair is markup, and an escaped
+  delimiter cannot open a run).
 - Links `[text](url)`, titled links, autolinks `<url>` / `<email>`, reference
   links `[text][ref]`, collapsed `[ref][]`, link definitions `[ref]: url`,
-  images `![alt](src)`, and cross-references `</#id>`.
+  images `![alt](src)`, reference images `![alt][ref]` and `![alt][]`, spans
+  `[text]{.c}`, and cross-references `</#id>`.
 - Lists: `-` `*` `+` bullets, `1.` / `1)` / `a.` ordered, task items
   `- [ ]` / `- [x]`, and definition lists (`:: term` / `:  def`).
 - Blockquotes `>` and caption / attribution lines `^ ...`.
+- Abbreviation definitions `*[TERM]: expansion`.
+- Hard breaks (a trailing backslash), the one inline mark that renders to
+  nothing and so the one most worth showing.
 - Fenced code (` ``` ` and `~~~`) with an optional language, quoted
   `"header"`, and `[label]`; raw fences ` ```=FORMAT `.
 - Comments: line comments `%%` and `%%%`-fenced block comments.
-- Fenced divs and admonitions `:::` with type words and optional title/label.
+- Fenced divs and admonitions `:::` with type words and optional title/label,
+  the line block, the local hard-break block, and the composite figure
+  (`::: |`, `::: \` and `::: figure`).
 - Block-attribute lines `{#id .class key=val}` and inline attribute blocks.
 - Tables: `|`, header `|=`, alignment `|=>` / `|=~`, rowspan `^`, colspan `<`.
-- Footnotes `[^id]` and definitions `[^id]: ...`.
+- Footnotes: references `[^id]`, inline footnotes `^[text]`, and definitions
+  `[^id]: ...`.
 - Math: inline `` $`...` ``, display `` $$`...` ``, and fenced ` ```math `.
 - Frontmatter blocks (`---`, `---toml`, `---json`, ...) at the document start.
-- Mentions `@name`, tags `#tag`, and CriticMarkup `{+ins+}` `{-del-}`
-  `{~old~>new~}` `{# comment #}`.
+- Mentions `@name`, tags `#tag`, inline extensions `:name[content]`, and
+  CriticMarkup `{+ins+}` `{-del-}` `{~old~>new~}` `{# comment #}`.
+- The braced (forced) spellings `{*x*}` `{/x/}` `{_x_}` `{~x~}` `{=x=}`, each
+  in the face of the mark it means, and the combined `/*bold italic*/`.
+- The typographic replacements: the dash runs `--` and `---`, the ellipsis,
+  the arrows `<--` `-->` `<-->` `<==` `==>` `<=>`, the comparison operators
+  `!=` `<=` `>=`, `(c)` `(r)` `(tm)` `+-`, and the braced en dash `{--}`.
+  These carry `carve-typographic-face`, which marks source the renderer
+  replaces with a character you did not type. A hyphen run that opens a word
+  after whitespace is a flag rather than a dash, so `git log --oneline` stays
+  literal.
 
 ## Installation
 
@@ -147,6 +165,19 @@ at the start of a line or after whitespace or an opening bracket, so a handful
 of edge cases (intraword literals, unmatched openers spanning lines) may be
 highlighted slightly more or less eagerly than the renderer would parse them.
 The fontification is a reading aid, not a parser.
+
+Block openers accept a leading indent, because a block opens at its container's
+content column and that column is zero only at the top level. A per-line rule
+cannot tell a container's indent from a stray one, so an indented opener at the
+TOP level, where the language says the line is literal text, is painted as an
+opener anyway. That is the same trade the thematic-break rule has always made,
+and it is an over-approximation rather than missing highlighting.
+
+The constructs that are deliberately not fontified are listed with their
+reasons in `carve-mode.el`, under "Constructs this mode does not fontify, and
+why". Two of them carry no marker at all (a blank line, a soft break), one is
+the absence of a marker (a paragraph), and one is a judgement on the record as
+issue 23 (the smart quote, which would put a face on every apostrophe).
 
 Every rule here is a per-line regexp with no container state, which shows up in
 two places around composite figures (`::: figure`, PART 9 §4c). A bare
