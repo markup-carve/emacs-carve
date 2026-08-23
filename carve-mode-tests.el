@@ -34,6 +34,39 @@ and the `face' text property at that position is returned."
   (or (eq face expected)
       (and (listp face) (memq expected face))))
 
+(defun carve-test--face-at-in-region (text search from)
+  "Open TEXT, fontify ONLY from the first match of FROM to the end, return a face.
+The `face\=' property at the first match of SEARCH is returned.
+
+WHY NOT `font-lock-ensure\='.  That fontifies the WHOLE buffer, so the region a
+matcher is handed is the buffer and a matcher that reads past its region can
+never be caught reading past it.  Every multi-line construct here therefore has
+one test that fontifies a LATER region of a buffer whose construct opened
+earlier - the shape font-lock actually produces while editing, and the shape
+that fails when `font-lock-extend-region-functions\=' does not widen far
+enough."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-mode 1)
+    (font-lock-flush)
+    (goto-char (point-min))
+    (search-forward from)
+    (font-lock-fontify-region (match-beginning 0) (point-max))
+    (goto-char (point-min))
+    (search-forward search)
+    (get-text-property (match-beginning 0) 'face)))
+
+(defun carve-test--syntax-at (text search)
+  "Open TEXT, fontify, and return the `syntax-table\=' property at SEARCH."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward search)
+    (get-text-property (match-beginning 0) 'syntax-table)))
+
 (ert-deftest carve-test-heading ()
   "An ATX heading's text is fontified with the heading face."
   (should (carve-test--face-includes
@@ -335,6 +368,107 @@ marker - and a tab does not separate (markup-carve/carve#525)."
     (should (equal comment-start "%% "))
     (should (eq major-mode 'carve-mode))
     (should (eq imenu-create-index-function #'carve--imenu-create-index))))
+
+;;;; An unterminated fence (markup-carve/emacs-carve#27)
+
+;; The mode used to paint an unterminated opener's own line and nothing else,
+;; so every markup character below it stayed live inside a block the engine
+;; renders as code.  Measured on the engine, which is what settles it rather
+;; than preference:
+;;
+;;     ```                     -> <pre><code>a *b* c
+;;     a *b* c                        
+;;                                    d *e* f
+;;     d *e* f                 </code></pre>
+;;
+;; one `code_block' holding the rest of the document.  Indented at the top
+;; level the SAME shape is not a block at all - it parses to a paragraph
+;; holding an inline `code' span - so the two cases are pinned apart here.
+
+(ert-deftest carve-test-unterminated-fence-paints-its-body ()
+  "A column-zero unterminated fence paints its body, not just its opener line."
+  (dolist (fence '("```" "~~~"))
+    (let ((src (concat fence "\na *b* c\n\nd *e* f\n")))
+      ;; BOTH runs, and the second is the one that matters: the body crosses a
+      ;; BLANK LINE, which is where every paragraph-bounded rule in this mode
+      ;; stops.  Checking only the first line would pass on a fix that painted
+      ;; one line further and stopped.
+      (should (carve-test--face-includes
+               (carve-test--face-at src "*b*") 'carve-code-face))
+      (should (carve-test--face-includes
+               (carve-test--face-at src "*e*") 'carve-code-face))
+      ;; ... and NOT as the emphasis it used to come back as.
+      (should-not (carve-test--face-includes
+                   (carve-test--face-at src "*e*") 'carve-bold-face)))))
+
+(ert-deftest carve-test-unterminated-fence-indented-is-not-a-block ()
+  "An INDENTED unterminated opener is no block, so its body is not code.
+Measured on the engine: `  ```' over `*b*' over `   ```' parses to a paragraph
+holding an inline `code' span and then an ordinary paragraph - no block
+anywhere.  Painting it as a block would let one stray indented delimiter turn
+the rest of the buffer into code, and would contradict the render this mode
+exists to preview."
+  (let ((src "  ```\n*b*\n   ```\n\n*c*\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "*b*") 'carve-code-face))
+    ;; The paragraph BELOW it is ordinary prose, which is the half that fails
+    ;; if the body is painted to the end of the buffer.
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*c*") 'carve-bold-face))))
+
+(ert-deftest carve-test-unterminated-fence-a-closed-indented-fence-still-is-one ()
+  "A TERMINATED indented fence keeps its body, which is the documented behavior.
+The fix above narrows the UNTERMINATED case only; this pins that it narrowed
+nothing else."
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ```\n  a *b* c\n  ```\n" "*b*")
+           'carve-code-face)))
+
+(ert-deftest carve-test-unterminated-fence-survives-a-partial-region ()
+  "Fontifying only a LATER paragraph still finds the fence that opened above it.
+This is the half a whole-buffer test cannot see.  `limit' is the font-lock
+REGION, not the buffer, and the region-extending hook stops at paragraph
+bounds - so a body that crosses a blank line is handed to a matcher with no
+opener above it and comes back as ordinary markup.  With `font-lock-ensure' the
+region IS the buffer and the bug never fires."
+  (let ((src "```\na *b* c\n\nd *e* f\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at-in-region src "*e*" "d *e*") 'carve-code-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at-in-region src "*e*" "d *e*") 'carve-bold-face))))
+
+(ert-deftest carve-test-unterminated-fence-both-passes-agree ()
+  "The font-lock pass and the propertize pass read an unterminated fence alike.
+They did not: the propertize pass treated an unterminated body as verbatim to
+the end of the buffer at any indent, while the matcher painted only the opener
+line, so the same lines were a block to one pass and prose to the other.
+
+`%%' is where the disagreement is observable, because the propertize pass is
+what makes a `%' inert inside a verbatim body.  Both readings below are the
+engine's:
+
+    ```            -> <pre><code>x
+
+    x                 a %% b
+                   </code></pre>       - `%%' is payload
+    a %% b
+
+      ```          -> <p><code>
+    x                 x</code></p>
+                      <p>a</p>         - `%%' opens a real comment
+    a %% b"
+  (let ((column-zero "```\nx\n\na %% b\n")
+        (indented "  ```\nx\n\na %% b\n"))
+    ;; Column zero: a block, so the percent run is payload in BOTH passes -
+    ;; code face from the matcher, punctuation syntax from the propertize pass.
+    (should (carve-test--face-includes
+             (carve-test--face-at column-zero "%%") 'carve-code-face))
+    (should (equal (carve-test--syntax-at column-zero "%%") (string-to-syntax ".")))
+    ;; Indented: no block, so neither pass claims it and the percent run opens
+    ;; the comment the engine says it opens.
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at indented "%%") 'carve-code-face))
+    (should (null (carve-test--syntax-at indented "%%")))))
 
 (provide 'carve-mode-tests)
 
