@@ -226,6 +226,32 @@ the author did not type."
       (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
   "Match an ATX heading line (no trailing attribute blocks in Carve).")
 
+(defun carve--closing-fence (from limit char len column)
+  "Find a fence closer between FROM and LIMIT, or nil.
+CHAR and LEN describe the opener\='s delimiter run and COLUMN is the column it
+opened at.  A closer is a run of CHAR at least LEN long, alone on its line, AT
+THE OPENER\'S OWN COLUMN (PART 9 S2): a run indented past the opener is
+CONTENT, which is what lets a document about Carve hold a Carve fence as
+sample text.  The column is compared as a column and not as a string of
+whitespace, so a tab-indented opener still meets a space-indented closer that
+lands on the same one.
+
+Returns a cons of the closer\='s bounds."
+  (let ((re (concat "^[ \t]*" (regexp-quote (make-string len char))
+                    (string char) "*[ \t]*$")))
+    (save-excursion
+      (goto-char from)
+      (catch 'found
+        (while (re-search-forward re limit t)
+          (let ((beg (match-beginning 0))
+                (end (match-end 0)))
+            (when (= column (save-excursion
+                              (goto-char beg)
+                              (skip-chars-forward " \t")
+                              (current-column)))
+              (throw 'found (cons beg end)))))
+        nil))))
+
 (defun carve--fontify-fenced-blocks (limit)
   "Search for a fenced code, raw, or math block between point and LIMIT.
 Set match groups so font-lock can color the opener, body, and closer.
@@ -251,6 +277,7 @@ an indented fence at the top level is the cheaper error."
              (char (aref fence 0))
              (len (length fence))
              (opener-beg (match-beginning 1))
+             (column (save-excursion (goto-char opener-beg) (current-column)))
              (opener-end (save-excursion
                            (goto-char opener-beg)
                            (line-end-position)))
@@ -261,12 +288,15 @@ an indented fence at the top level is the cheaper error."
                              (skip-chars-forward " \t")
                              (point))))
              (format-end (and format-beg (match-end 0)))
-             (closer-re (concat "^[ \t]*" (regexp-quote (make-string len char))
-                                (string char) "*[ \t]*$")))
+             ;; THE CLOSER SITS AT THE OPENER'S OWN COLUMN, and this used to
+             ;; take one at ANY indent - so a delimiter-shaped line indented
+             ;; INSIDE the body ended the block early and everything after the
+             ;; sample went live (markup-carve/emacs-carve#21).
+             (closer (carve--closing-fence (point) limit char len column)))
         ;; Find the closing fence (same char, at least as long).
-        (if (re-search-forward closer-re limit t)
-            (let ((closer-beg (match-beginning 0))
-                  (closer-end (match-end 0)))
+        (if closer
+            (let ((closer-beg (car closer))
+                  (closer-end (cdr closer)))
               ;; Match data: 0=all 1=opener line 2=body 3=closer 4=raw format.
               (set-match-data
                (list opener-beg closer-end
@@ -275,6 +305,10 @@ an indented fence at the top level is the cheaper error."
                      closer-beg closer-end                 ; closer
                      (or format-beg opener-beg)            ; raw `=FORMAT'
                      (or format-end opener-beg)))
+              ;; Past the closer, so the next call does not read the block's
+              ;; own body as a stack of openers.  `carve--closing-fence' looks
+              ;; without moving, where the search it replaced moved.
+              (goto-char closer-end)
               (throw 'done t))
           ;; Unterminated fence: color to LIMIT and stop.
           (set-match-data
@@ -346,6 +380,76 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
           (set-match-data (list beg end beg end))
           (throw 'done t))))
     nil))
+
+(defun carve--fontify-code-span (limit)
+  "Search for a verbatim backtick run between point and LIMIT.
+Group 1 is the whole span, its delimiter runs included.
+
+A RUN OF N BACKTICKS IS CLOSED BY A RUN OF EXACTLY N.  The regexp this
+replaces could not say that - it matched one backtick, a body of
+non-backticks, and one backtick - so `a \\=``x *b* y\\=`` z\\=' was paired ONE
+CHARACTER IN: the span ran from the SECOND backtick of the opener to the
+third of the closer, and a payload that reached either seam was coloured as
+markup.
+
+AN UNPARTNERED RUN IS A SPAN TO THE END OF ITS PARAGRAPH.  The engine renders
+`a \\=`x *b* y\\=' as `a <code>x *b* y</code>\\=', and the rest of the line was left
+live here, so an emphasis run after an unclosed backtick coloured."
+  (catch 'done
+    (while (search-forward "`" limit t)
+      (let* ((beg (1- (point)))
+             (open-end (progn (skip-chars-forward "`" limit) (point)))
+             (len (- open-end beg))
+             ;; A RUN OF THREE OR MORE THAT OPENS ITS LINE IS A BLOCK
+             ;; DELIMITER, and belongs to `carve--fontify-fenced-blocks'.
+             ;; Without this the CLOSER of a fenced block read as an inline
+             ;; opener with no partner, and the prose after a closed block
+             ;; came back as code.
+             (delimiter (and (>= len 3)
+                             (save-excursion
+                               (goto-char beg)
+                               (skip-chars-backward " \t")
+                               (bolp)))))
+        (unless delimiter
+          (let* ((paragraph (carve--prose-end limit))
+                 (close (carve--closing-backtick-run open-end paragraph len))
+                 (end (if close (min limit (+ close len)) paragraph)))
+            (goto-char end)
+            (set-match-data (list beg end beg end))
+            (throw 'done t)))))
+    nil))
+
+(defun carve--fontify-delimited-run (open close min-content limit)
+  "Search for a run from OPEN to CLOSE between point and LIMIT.
+Group 1 is the whole run, delimiters included.  MIN-CONTENT is the fewest
+characters the payload may hold, which is one where an empty brace pair is
+text rather than an empty construct (markup-carve/carve#1447).
+
+A RUN MAY CROSS A SOFT LINE BREAK.  Both callers delimit a comment inside one
+PARAGRAPH, not inside one line, and a `not-newline\\=' body left the second half
+of `a {% x\\=' + newline + `*b* %} z\\=' live: the emphasis inside a run that
+renders nothing came back bold."
+  (catch 'done
+    (while (search-forward open limit t)
+      (let* ((beg (- (point) (length open)))
+             (paragraph (carve--prose-end limit))
+             (end (save-excursion
+                    (goto-char (+ (point) min-content))
+                    (and (<= (point) paragraph)
+                         (search-forward close paragraph t)))))
+        (when end
+          (goto-char end)
+          (set-match-data (list beg end beg end))
+          (throw 'done t))))
+    nil))
+
+(defun carve--fontify-braced-comment (limit)
+  "Search for a `{% ... %}\\=' comment between point and LIMIT."
+  (carve--fontify-delimited-run "{%" "%}" 0 limit))
+
+(defun carve--fontify-editorial-comment (limit)
+  "Search for a `{# ... #}\\=' editorial comment between point and LIMIT."
+  (carve--fontify-delimited-run "{#" "#}" 1 limit))
 
 ;;;; Font-lock keywords
 
@@ -679,8 +783,11 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
      (2 'carve-attribute-face))
 
     ;; Code span.
-    ;; The inline `code` run.
-    (,(rx (group "`" (minimal-match (one-or-more (not (any "`")))) "`"))
+    ;; The inline `code` run.  A matcher rather than a regexp because the
+    ;; pairing is a run of N backticks against a run of exactly N, and because
+    ;; an unpartnered run reaches to the end of its paragraph - neither of
+    ;; which an Emacs regexp can say (markup-carve/emacs-carve#21).
+    (carve--fontify-code-span
      (1 'carve-code-face keep))
 
     ;; Escaped char: a backslash before an ASCII punctuation character.
@@ -714,7 +821,7 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
     ;; applies keywords in order and does not override a face already set, so a
     ;; `{%' inside `` ` `` stays code -- and BEFORE the emphasis rules, so the
     ;; payload is claimed before they see it.
-    (,(rx "{%" (minimal-match (zero-or-more not-newline)) "%}")
+    (carve--fontify-braced-comment
      (0 'font-lock-comment-face))
 
     ;; Addition: {+ins+}
@@ -745,7 +852,9 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
      (1 'carve-critic-face))
 
     ;; Editorial comment: {# comment #}
-    (,(rx (group "{#" (minimal-match (one-or-more not-newline)) "#}"))
+    ;; A matcher for the same reason as the delimited comment above: the run
+    ;; is bounded by its paragraph, not by its line.
+    (carve--fontify-editorial-comment
      (1 'carve-critic-face))
 
     ;; The BRACED (forced) spellings: `{*x*}' emphasizes intraword, where the
@@ -1162,7 +1271,10 @@ reach."
   (while (< (point) end)
     (let ((char (char-after)))
       (cond
-       ;; An escaped character is literal, so `\\%%' opens nothing.
+       ;; A backslash makes the next character literal, so `\\%%' opens
+       ;; nothing.  Worded without the construct's own name on the first line:
+       ;; the construct ledger reads that line as a rule name, and this one
+       ;; took the citation away from the font-lock rule that paints the pair.
        ((eq char ?\\)
         (when (eq (char-after (1+ (point))) ?%)
           (carve--inert-percent (1+ (point)) (min end (+ 2 (point)))))
@@ -1202,14 +1314,12 @@ to the end of its paragraph."
         (let* ((fence (match-string 1))
                (char (aref fence 0))
                (len (length fence))
-               (closer-re (concat "^[ \t]*" (regexp-quote (make-string len char))
-                                  (string char) "*[ \t]*$"))
+               (column (save-excursion
+                         (goto-char (match-beginning 1))
+                         (current-column)))
                (body (min end (1+ (line-end-position))))
-               (body-end (save-excursion
-                           (goto-char body)
-                           (if (re-search-forward closer-re end t)
-                               (match-beginning 0)
-                             end))))
+               (closer (carve--closing-fence body end char len column))
+               (body-end (if closer (car closer) end)))
           (carve--inert-percent body body-end)
           (goto-char body-end)
           (forward-line 1)))
@@ -1220,6 +1330,48 @@ to the end of its paragraph."
        (t (let ((stop (carve--prose-end end)))
             (carve--propertize-prose (point) stop)
             (goto-char stop)))))))
+
+;; `font-lock-beg' and `font-lock-end' are the region an extend function is
+;; handed, and font-lock binds them dynamically rather than passing them.  This
+;; mode does not require font-lock, so they are declared here.
+(defvar font-lock-beg)
+(defvar font-lock-end)
+
+(defun carve--extend-region-to-paragraphs ()
+  "Widen the font-lock region to whole paragraphs.
+Bound to `font-lock-beg\\=' and `font-lock-end\\=', the way this hook is called,
+and returns non-nil when it moved either.
+
+WHY.  Three matchers here are multi-line - a backtick run with no partner, a
+`{% ... %}\\=' comment and a `{# ... #}\\=' one all reach the end of their
+paragraph - and font-lock hands a matcher a CHUNK of the buffer, not the whole
+of it.  A chunk that starts inside a run has no opener to find, so the payload
+would be fontified as ordinary markup; a chunk that ends before the closer
+would make a closed run look unpartnered.  Widening to the paragraph gives
+every one of them its opener and its closer."
+  (let ((changed nil))
+    (save-excursion
+      (goto-char font-lock-beg)
+      (beginning-of-line)
+      ;; STOP AT AN EMPTY ROW, and never at a fence-shaped one.  Stopping ON
+      ;; a fence put the region's first line on a CLOSER, which the matcher
+      ;; for fenced blocks then read as an unterminated opener, so the prose
+      ;; after a closed block came back as code.  Walking past it lands on the
+      ;; block's opener instead, and the matcher pairs the two and moves on.
+      (while (and (> (point) (point-min))
+                  (not (looking-at carve--blank-line-re)))
+        (forward-line -1))
+      (when (< (point) font-lock-beg)
+        (setq font-lock-beg (point)
+              changed t)))
+    (save-excursion
+      (goto-char font-lock-end)
+      (beginning-of-line)
+      (let ((stop (carve--prose-end (point-max))))
+        (when (> stop font-lock-end)
+          (setq font-lock-end stop
+                changed t))))
+    changed))
 
 (defun carve--syntax-propertize-extend-region (start end)
   "Widen the region START to END to the whole buffer, or nil when it is already.
@@ -1327,6 +1479,8 @@ installed, signal a user error instead of failing obscurely."
               '(carve-font-lock-keywords nil nil nil nil
                 (font-lock-multiline . t)))
   (setq-local font-lock-multiline t)
+  (add-hook 'font-lock-extend-region-functions
+            #'carve--extend-region-to-paragraphs nil t)
   (setq-local syntax-propertize-function #'carve--syntax-propertize)
   (setq-local syntax-propertize-extend-region-functions
               (list #'carve--syntax-propertize-extend-region))
