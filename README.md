@@ -176,6 +176,14 @@ CLOSER is exact, though: it has to sit at its opener's own column, because a
 delimiter-shaped line indented past the opener is content. That is what lets a
 document about Carve hold a Carve fence as sample text.
 
+An UNTERMINATED fence is the one place that trade is not made, because there it
+would cost the whole buffer rather than one line. A fence opener with no closer
+is a block only at column zero, and there its body runs to the end of the
+document - which is what the engine reads, and what the mode now paints.
+Indented, the engine reads the same three lines as an inline code span with no
+block anywhere, so the mode leaves it alone: painting it would let one stray
+indented delimiter turn the rest of the file into code.
+
 Inline runs that hold a payload are bounded by their PARAGRAPH rather than by
 their line, which is where the engine bounds them: a backtick run with no
 partner is a code span to the end of its paragraph, and `{% ... %}` and

@@ -310,14 +310,45 @@ an indented fence at the top level is the cheaper error."
               ;; without moving, where the search it replaced moved.
               (goto-char closer-end)
               (throw 'done t))
-          ;; Unterminated fence: color to LIMIT and stop.
-          (set-match-data
-           (list opener-beg limit
-                 opener-beg (line-end-position) (point) (point)
-                 (point) (point)
-                 (or format-beg opener-beg) (or format-end opener-beg)))
-          (goto-char limit)
-          (throw 'done t))))
+          ;; UNTERMINATED: A BLOCK ONLY AT COLUMN ZERO, and there it runs to
+          ;; the end of the DOCUMENT.
+          ;;
+          ;; This used to set the body group to an EMPTY range at point and
+          ;; jump to the limit, so only the opener line was painted and every
+          ;; markup character below it stayed live - bold inside a block the
+          ;; engine renders as code (markup-carve/emacs-carve#27).  The comment
+          ;; here said "color to LIMIT and stop", which is what it was meant to
+          ;; do and did not.
+          ;;
+          ;; POINT-MAX, NOT LIMIT.  `limit' is the font-lock region, not the
+          ;; buffer, so painting to it is only correct while the region happens
+          ;; to be the whole buffer.  `carve--extend-region-to-paragraphs'
+          ;; widens the region to the end of the buffer whenever an
+          ;; unterminated opener is above it, which is what makes these agree.
+          ;;
+          ;; AN INDENTED OPENER IS LEFT ALONE, because it is not a block at
+          ;; all.  Measured on the engine: at the top level
+          ;;
+          ;;       ```
+          ;;     *b*
+          ;;        ```
+          ;;
+          ;; parses to a paragraph holding an inline `code' span, with no block
+          ;; anywhere - so painting its body as code to the end of the buffer
+          ;; would make the mode contradict the render it exists to preview,
+          ;; and one stray indented delimiter would take the rest of the file
+          ;; with it.  A TERMINATED indented fence is still a fence: that is the
+          ;; documented over-approximation above, and it is not widened here.
+          (when (zerop column)
+            (set-match-data
+             (list opener-beg (point-max)
+                   opener-beg opener-end                          ; opener line
+                   (min (1+ opener-end) (point-max)) (point-max)  ; body
+                   (point-max) (point-max)                        ; closer
+                   (or format-beg opener-beg)                     ; raw `=FORMAT'
+                   (or format-end opener-beg)))
+            (goto-char (point-max))
+            (throw 'done t)))))
     nil))
 
 (defun carve--fontify-comment-blocks (limit)
@@ -1300,6 +1331,28 @@ fence-shaped line ends it because a fence opens a block wherever it stands."
       (forward-line 1))
     (min (point) limit)))
 
+(defun carve--verbatim-fence-opens-block-p (limit)
+  "Non-nil when the fence line at point opens a block, bounded by LIMIT.
+Point is on a line matching `carve--verbatim-fence-re\=', with its match data
+current.  A fence with a closer opens a block at any indent, which is this
+mode's documented over-approximation.  An UNTERMINATED one opens a block only
+at column zero: indented at the top level the engine reads it as an inline
+code span with no block anywhere, so treating its body as verbatim to the end
+of the buffer would claim a block the render does not have."
+  (let* ((fence (match-string 1))
+         (char (aref fence 0))
+         (len (length fence))
+         (opener-beg (match-beginning 1))
+         (column (save-excursion (goto-char opener-beg) (current-column)))
+         (body (min limit (1+ (line-end-position)))))
+    (or (zerop column)
+        ;; SAVE THE MATCH DATA.  `carve--closing-fence' searches, and the
+        ;; caller reads `match-string' from the `looking-at' that selected
+        ;; this branch AFTER this predicate returns - so clobbering it here
+        ;; hands the caller a different fence's groups.
+        (and (save-match-data (carve--closing-fence body limit char len column))
+             t))))
+
 (defun carve--syntax-propertize (start end)
   "Write this mode's syntax properties over the region START to END.
 Walks blocks, because that is the state the question needs: the body of a
@@ -1310,7 +1363,16 @@ to the end of its paragraph."
     (beginning-of-line)
     (while (< (point) end)
       (cond
-       ((looking-at carve--verbatim-fence-re)
+       ;; THE TWO PASSES AGREE ON WHAT AN UNTERMINATED FENCE IS.  This one
+       ;; used to make an unterminated opener's body verbatim to the end of
+       ;; the buffer at ANY indent, while the font-lock matcher painted only
+       ;; the opener line - so the same three lines were a block to one pass
+       ;; and prose to the other.  Both now read it the same way: a block at
+       ;; column zero, running to the end of the document, and nothing at all
+       ;; when it is indented, which is what the engine reads
+       ;; (markup-carve/emacs-carve#27).
+       ((and (looking-at carve--verbatim-fence-re)
+             (carve--verbatim-fence-opens-block-p end))
         (let* ((fence (match-string 1))
                (char (aref fence 0))
                (len (length fence))
@@ -1336,6 +1398,45 @@ to the end of its paragraph."
 ;; mode does not require font-lock, so they are declared here.
 (defvar font-lock-beg)
 (defvar font-lock-end)
+
+(defun carve--unterminated-fence-start (bound)
+  "Position of the opener of an unterminated column-zero fence at or before BOUND.
+Return nil when no such fence is open there.
+
+WHY IT EXISTS.  An unterminated fence's body reaches the end of the DOCUMENT,
+and font-lock hands a matcher a CHUNK.  A chunk that begins inside such a body
+has no opener above it to find, so the body would be fontified as ordinary
+markup - which is the failure this is here to prevent, and the one a test that
+fontifies the whole buffer cannot see.
+
+Walking from the top is the same cost, and for the same reason, as
+`carve--syntax-propertize': whether a line sits inside a fence is a fact about
+every line above it.  The walk stops as soon as it is past BOUND, so a fence
+opened below the region is not searched for a closer it does not need."
+  (save-excursion
+    (goto-char (point-min))
+    (catch 'found
+      (while (< (point) (point-max))
+        (if (and (> (point) bound) (not (eobp)))
+            (throw 'found nil)
+          (if (looking-at carve--verbatim-fence-re)
+              (let* ((fence (match-string 1))
+                     (char (aref fence 0))
+                     (len (length fence))
+                     (opener-beg (match-beginning 1))
+                     (column (save-excursion
+                               (goto-char opener-beg)
+                               (current-column)))
+                     (body (min (point-max) (1+ (line-end-position))))
+                     (closer (carve--closing-fence body (point-max) char len column)))
+                (cond
+                 (closer (goto-char (cdr closer)) (forward-line 1))
+                 ;; Unterminated and indented: not a block, so it opens
+                 ;; nothing and the walk carries on past it.
+                 ((not (zerop column)) (forward-line 1))
+                 (t (throw 'found opener-beg))))
+            (forward-line 1))))
+      nil)))
 
 (defun carve--extend-region-to-paragraphs ()
   "Widen the font-lock region to whole paragraphs.
@@ -1370,6 +1471,21 @@ every one of them its opener and its closer."
       (let ((stop (carve--prose-end (point-max))))
         (when (> stop font-lock-end)
           (setq font-lock-end stop
+                changed t))))
+    ;; AN UNTERMINATED FENCE REACHES THE END OF THE DOCUMENT, and a paragraph
+    ;; bound is nowhere near far enough.  Widening to paragraphs is right for
+    ;; the three inline runs above, all of which stop at a blank line; a fence
+    ;; body crosses blank lines by definition, so a region that begins inside
+    ;; one is handed no opener and paints the body as ordinary markup.  That is
+    ;; the shape a whole-buffer test cannot see, because there the region IS
+    ;; the buffer and the bug never fires (markup-carve/emacs-carve#27).
+    (let ((open (carve--unterminated-fence-start font-lock-end)))
+      (when open
+        (when (> font-lock-beg open)
+          (setq font-lock-beg open
+                changed t))
+        (when (< font-lock-end (point-max))
+          (setq font-lock-end (point-max)
                 changed t))))
     changed))
 
