@@ -9,6 +9,11 @@ jobs:
   test:
     name: Byte-compile and ERT
     runs-on: ubuntu-latest
+    # Bounded on purpose. On 2026-08-19 `apt-get update` stalled on
+    # archive.ubuntu.com and this job ran for the full six-hour default before
+    # being cancelled, which left a green PR reading as dead for two days. The
+    # job's real runtime is under thirty seconds.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -19,15 +24,17 @@ jobs:
 
       - name: Byte-compile (errors fail the build)
         run: |
-          emacs -Q --batch -f batch-byte-compile carve-mode.el
+          emacs -Q --batch -L . -f batch-byte-compile carve-mode.el carve-lsp.el
 
       - name: Run ERT tests
         run: |
-          emacs -Q --batch \
+          emacs -Q --batch -L . \
             -l ert \
             -l carve-mode.el \
+            -l carve-lsp.el \
             -l carve-mode-tests.el \
             -l carve-battery-tests.el \
+            -l carve-lsp-tests.el \
             -f ert-run-tests-batch-and-exit
 
       # Separate from the tests on purpose: this reaches the network, so a
