@@ -188,3 +188,15 @@ fontifies it after any `:::` closer. Both are over-approximations rather than
 missing highlighting, and both need a real container model to fix - which is
 what the language server above has, so enabling it is the answer to this
 section rather than a better regexp.
+
+Comments are the one place the mode does keep block state. `%%` gets its
+comment syntax from the syntax table, which knows nothing about what a `%%`
+run sits inside, so a `syntax-propertize-function` walks the buffer and takes
+the comment flags back off a `%` that cannot open a comment where it stands -
+inside a fenced body, inside a backtick run, inside an autolink, inside a
+link, and where the run is not preceded by whitespace. Two consequences worth
+knowing. The pass rescans the whole buffer on every change, because whether a
+line sits inside a fence is a fact about every line above it. And inside a
+label the mode is deliberately over-eager: the engine hides `[x %% y](u)`
+down to `x` while still rendering the link, and the mode paints the whole
+label as link text - keeping the link, which is the part a reader needs.

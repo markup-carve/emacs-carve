@@ -999,6 +999,235 @@ Only matches when the block starts on the first line of the buffer."
       (set-match-data (list (point-min) (min (point) limit)))
       t)))
 
+;;;; Syntax propertizing
+
+;; WHY THIS PASS EXISTS.
+;;
+;; `%' carries the comment-start flags in the syntax table below, so `%%'
+;; opens a comment to end of line ANYWHERE in the buffer, with no regard for
+;; what it sits inside.  Syntactic fontification runs BEFORE the font-lock
+;; keywords and the keywords are non-override, so the comment face wins a
+;; region no later rule can take back: a `%%' in a code span, in a link label
+;; or in a fenced body claimed the rest of its line and the span, the link or
+;; the block stopped being one (markup-carve/emacs-carve#22).  No ordering of
+;; the keywords reaches that, because the face is already there when they run.
+;; Only the syntax properties do, which is what this pass writes.
+;;
+;; WHAT IT WRITES.  Punctuation syntax on a `%' that cannot open a comment
+;; where it stands.  A two-character comment opener whose first character is
+;; punctuation opens nothing, so clearing the flags on the `%' is the whole
+;; mechanism - no other character's syntax is touched, and the comment
+;; constructs that ARE comments keep working unchanged.
+;;
+;; ONE PASS OVER THE WHOLE BUFFER, and that is a deliberate cost.  The state
+;; this needs is block state: whether a line sits inside a fence is a fact
+;; about every line above it, and there is no cheaper honest place to start
+;; than the top.  `carve--syntax-propertize-extend-region' therefore widens
+;; every request to the whole buffer, which also means the buffer is scanned
+;; ONCE per change rather than once per font-lock chunk.
+
+(defconst carve--verbatim-fence-re
+  (rx line-start (zero-or-more (in " \t"))
+      (group (or (>= 3 ?`) (>= 3 ?~)))
+      (zero-or-more not-newline) line-end)
+  "Match a line that opens a code, raw, or math fence.
+Group 1 is the delimiter run.  The same shape as the matcher in
+`carve--fontify-fenced-blocks\\=', deliberately: the region protected here is
+the region that matcher paints, and two spellings of one rule drift.")
+
+(defconst carve--comment-fence-re
+  (rx line-start (zero-or-more (in " \t"))
+      (group "%%" (one-or-more "%"))
+      (zero-or-more not-newline) line-end)
+  "Match a line that opens or closes a `%%%\\=' comment fence.")
+
+(defconst carve--blank-line-re
+  (rx line-start (zero-or-more (in " \t")) line-end)
+  "Match a line with no content.")
+
+(defun carve--inert-percent (beg end)
+  "Clear the comment-start flags on every `%\\=' between BEG and END."
+  (save-excursion
+    (goto-char beg)
+    (while (search-forward "%" end t)
+      (put-text-property (1- (point)) (point)
+                         'syntax-table (string-to-syntax ".")))))
+
+(defun carve--closing-backtick-run (from limit len)
+  "Return the start of the first run of exactly LEN backticks in [FROM, LIMIT).
+Return nil when there is none.  EXACTLY LEN, because a run of a different
+length does not close this one: `a ``x `y` z`` w\\=' is one span whose payload
+holds a literal backtick pair."
+  (save-excursion
+    (goto-char from)
+    (catch 'found
+      (while (search-forward "`" limit t)
+        (let ((run-beg (1- (point))))
+          (skip-chars-forward "`" limit)
+          (when (= (- (point) run-beg) len)
+            (throw 'found run-beg))))
+      nil)))
+
+(defun carve--propertize-backtick-run (limit)
+  "Point is on the first backtick of a run; protect its payload and step over it.
+A backtick run is verbatim - a code span, an inline literal, a math run or a
+raw inline - and the spec says so in as many words: code spans protect their
+content, and `%%\\=' inside one is literal.  An UNPARTNERED run is a span to the
+end of its PARAGRAPH, which is LIMIT here, so its tail is protected rather
+than left live."
+  (let* ((beg (point))
+         (open-end (progn (skip-chars-forward "`" limit) (point)))
+         (len (- open-end beg))
+         (close (carve--closing-backtick-run open-end limit len)))
+    (if (not close)
+        (progn (carve--inert-percent open-end limit)
+               (goto-char limit))
+      (carve--inert-percent open-end close)
+      (goto-char (min limit (+ close len))))))
+
+(defun carve--propertize-autolink (limit)
+  "Point is on a `<\\='; protect an autolink's payload and step over it.
+An autolink's text IS its destination, so nothing in it is markup: the `%%\\='
+of a percent-encoded path is part of the URL."
+  (if (and (looking-at (rx "<" (or "http" "mailto:"
+                                   (seq (one-or-more (any "a-zA-Z0-9._%+-")) "@"))
+                           (zero-or-more (not (any "> "))) ">"))
+           (<= (match-end 0) limit))
+      (progn (carve--inert-percent (point) (match-end 0))
+             (goto-char (match-end 0)))
+    (forward-char 1)))
+
+(defun carve--propertize-label (limit)
+  "Point is on a `[\\='; protect a link, image or span and step over it.
+A bracket run that CLOSES and carries a payload which ALSO closes -
+`](dest)\\=', `][ref]\\=' or `]{attrs}\\=' - is a link, an image or a span, and
+the line goes on after it: the engine renders `a [x %% y](u) z\\=' as a link
+followed by `z\\='.  Anything less is not one, and there the comment really does
+reach the end of the line: `a [x %% y] z\\=' and `a [x %% y](u z\\=' both render
+`a [x\\='.  So the payload\\='s own closer is required, not just its opener."
+  (let* ((close (save-excursion
+                  (goto-char (1+ (point)))
+                  (catch 'found
+                    (while (search-forward "]" limit t)
+                      (unless (eq (char-before (1- (point))) ?\\)
+                        (throw 'found (1- (point)))))
+                    nil)))
+         (opener (and close (char-after (1+ close))))
+         (closer (cdr (assq opener '((?\( . ")") (?\[ . "]") (?{ . "}")))))
+         (payload-end (and closer
+                           (save-excursion
+                             (goto-char (+ 2 close))
+                             (search-forward closer limit t)))))
+    (if (not payload-end)
+        (forward-char 1)
+      ;; The payload is verbatim too: `[x](u%%v)' links to `u%%v'.
+      (carve--inert-percent (1+ (point)) payload-end)
+      (goto-char payload-end))))
+
+(defun carve--propertize-braced-comment (limit)
+  "Point is on the `{\\=' of a `{%\\=' or `{#\\=' run; protect it and step over it.
+Both hold a payload the reader is not meant to read as markup, so a `%%\\='
+inside one must not open a comment that outlives the closer: `a {% x %% y %} z\\='
+renders `a  z\\=', with the `%}\\=' still closing and the `z\\=' still prose."
+  (let* ((closer (if (eq (char-after (1+ (point))) ?%) "%}" "#}"))
+         (close (save-excursion
+                  (goto-char (+ 2 (point)))
+                  (search-forward closer limit t))))
+    (if close
+        (progn (carve--inert-percent (point) close)
+               (goto-char close))
+      (forward-char 1))))
+
+(defun carve--propertize-percent (limit)
+  "Point is on a `%\\='; decide whether the run it starts opens a comment.
+A `%%\\=' run is a comment marker only when it is PRECEDED BY WHITESPACE or
+starts its line (spec, \"Comments\"): `The value is 50%% increase\\=' stays
+literal, which is what keeps a percentage safe.  A run that opens a comment
+takes the rest of its line and there is nothing inside it left to protect."
+  (let* ((beg (point))
+         (run-end (progn (skip-chars-forward "%" limit) (point)))
+         (before (if (> beg (point-min)) (char-before beg) ?\n)))
+    (if (and (>= (- run-end beg) 2)
+             (memq before '(?\s ?\t ?\n)))
+        (goto-char (line-end-position))
+      (carve--inert-percent beg run-end)
+      (goto-char run-end))))
+
+(defun carve--propertize-prose (beg end)
+  "Protect every verbatim run between BEG and END.
+BEG to END is one paragraph's worth of prose: an inline run may cross a soft
+line break but not a blank line, so a paragraph is the widest a `\\=`\\=' run can
+reach."
+  (goto-char beg)
+  (while (< (point) end)
+    (let ((char (char-after)))
+      (cond
+       ;; An escaped character is literal, so `\\%%' opens nothing.
+       ((eq char ?\\)
+        (when (eq (char-after (1+ (point))) ?%)
+          (carve--inert-percent (1+ (point)) (min end (+ 2 (point)))))
+        (goto-char (min end (+ 2 (point)))))
+       ((eq char ?`) (carve--propertize-backtick-run end))
+       ((eq char ?<) (carve--propertize-autolink end))
+       ((eq char ?\[) (carve--propertize-label end))
+       ((and (eq char ?{) (memq (char-after (1+ (point))) '(?% ?#)))
+        (carve--propertize-braced-comment end))
+       ((eq char ?%) (carve--propertize-percent end))
+       (t (forward-char 1))))))
+
+(defun carve--prose-end (limit)
+  "The end of the prose run starting at point, bounded by LIMIT.
+A blank line ends it because an inline run does not cross one, and a
+fence-shaped line ends it because a fence opens a block wherever it stands."
+  (save-excursion
+    (forward-line 1)
+    (while (and (< (point) limit)
+                (not (looking-at carve--blank-line-re))
+                (not (looking-at carve--verbatim-fence-re))
+                (not (looking-at carve--comment-fence-re)))
+      (forward-line 1))
+    (min (point) limit)))
+
+(defun carve--syntax-propertize (start end)
+  "Write this mode's syntax properties over the region START to END.
+Walks blocks, because that is the state the question needs: the body of a
+fence is verbatim however many lines it runs for, and an inline run reaches
+to the end of its paragraph."
+  (save-excursion
+    (goto-char start)
+    (beginning-of-line)
+    (while (< (point) end)
+      (cond
+       ((looking-at carve--verbatim-fence-re)
+        (let* ((fence (match-string 1))
+               (char (aref fence 0))
+               (len (length fence))
+               (closer-re (concat "^[ \t]*" (regexp-quote (make-string len char))
+                                  (string char) "*[ \t]*$"))
+               (body (min end (1+ (line-end-position))))
+               (body-end (save-excursion
+                           (goto-char body)
+                           (if (re-search-forward closer-re end t)
+                               (match-beginning 0)
+                             end))))
+          (carve--inert-percent body body-end)
+          (goto-char body-end)
+          (forward-line 1)))
+       ;; The body of a comment fence is a comment already, so a `%%' inside
+       ;; it opening one more changes nothing about how it reads.
+       ((looking-at carve--comment-fence-re) (forward-line 1))
+       ((looking-at carve--blank-line-re) (forward-line 1))
+       (t (let ((stop (carve--prose-end end)))
+            (carve--propertize-prose (point) stop)
+            (goto-char stop)))))))
+
+(defun carve--syntax-propertize-extend-region (start end)
+  "Widen the region START to END to the whole buffer, or nil when it is already.
+See the note above: the pass needs block state, so it starts at the top - and
+widening the END too means one scan per change instead of one per chunk."
+  (unless (and (= start (point-min)) (= end (point-max)))
+    (cons (point-min) (point-max))))
+
 ;;;; Syntax table
 
 (defvar carve-mode-syntax-table
@@ -1013,9 +1242,10 @@ Only matches when the block starts on the first line of the buffer."
     ;; the way a `%%' line does.  It has no font-lock rule and wants none - the
     ;; syntax table has claimed it before the keywords run - so this is where
     ;; the construct is named.  Its payload is inert for the same reason.
-    ;; The claim is too WIDE, though, and that is markup-carve/emacs-carve#22:
-    ;; a `%%' inside a code span, a link label or a fenced body opens a comment
-    ;; there too, which needs a `syntax-propertize-function' to fix.
+    ;; The claim these two entries make is too WIDE on its own - a `%%' inside
+    ;; a code span, a link label or a fenced body opened a comment there too -
+    ;; and `carve--syntax-propertize' above is what narrows it back to where
+    ;; the language has a comment.
     ;; Treat backtick as a string-ish delimiter for code spans.
     (modify-syntax-entry ?` "$" table)
     ;; Underscore and slash are punctuation, not word constituents, so the
@@ -1097,6 +1327,9 @@ installed, signal a user error instead of failing obscurely."
               '(carve-font-lock-keywords nil nil nil nil
                 (font-lock-multiline . t)))
   (setq-local font-lock-multiline t)
+  (setq-local syntax-propertize-function #'carve--syntax-propertize)
+  (setq-local syntax-propertize-extend-region-functions
+              (list #'carve--syntax-propertize-extend-region))
   (setq-local comment-start "%% ")
   (setq-local comment-start-skip "%%+[ \t]*")
   (setq-local comment-end "")
