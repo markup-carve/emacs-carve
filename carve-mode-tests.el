@@ -914,3 +914,138 @@ after prose, and the two delimiter lines of a comment fence."
            (carve-test--face-at "x %% note\n" "note") 'font-lock-comment-face))
   (should (carve-test--face-includes
            (carve-test--face-at "%%%\nbody\n%%%\n" "body") 'font-lock-comment-face)))
+
+;;; The payload axis: a run the engine keeps verbatim keeps its markup inert
+;;; (markup-carve/emacs-carve#21).
+;;
+;; A construct that is recognized but does not hold its payload is worse than
+;; one that is not highlighted at all, because the buffer then claims the
+;; document says something it does not.  Each test below pins a shape
+;; carve-grammars' generated payload sweep found leaking, and each asserts the
+;; payload's face rather than the construct's, because the payload is the
+;; question.
+
+(ert-deftest carve-test-wide-backtick-run-is-paired-at-its-own-width ()
+  "A run of two backticks is closed by a run of two, not by the next one.
+The span was paired ONE CHARACTER IN - from the second backtick of the opener
+to the third of the closer - so the outer backtick at each end was left
+outside it and a payload reaching either seam coloured."
+  (dolist (src '("a ``x *b* y`` z\n" "- item\n\n  a ``x *b* y`` z\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "``x") 'carve-code-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*b*") 'carve-code-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "*b*") 'carve-bold-face)))
+  ;; A run of a DIFFERENT width does not close it, so the span holds a literal
+  ;; backtick pair: `a ``x `y` z`` w' is one span, not two.
+  (should (carve-test--face-includes
+           (carve-test--face-at "a ``x `y` z`` w\n" "y") 'carve-code-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a ``x `y` z`` w\n" "w") 'carve-code-face)))
+
+(ert-deftest carve-test-unpartnered-backtick-run-reaches-its-paragraph ()
+  "An unclosed run is a span to the end of its PARAGRAPH, not to nowhere.
+The engine renders `a `x *b* y' as `a <code>x *b* y</code>'; the rest of the
+line stayed live here, so an emphasis run after an unclosed backtick coloured.
+The paragraph is the bound: the next line is inside the span and the one after
+a blank line is not."
+  (dolist (src '("a `x *b* y\nc *d* e\n\nf *g* h\n"
+                 "a ``x *b* y\nc *d* e\n\nf *g* h\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*b*") 'carve-code-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*d*") 'carve-code-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*g*") 'carve-bold-face))))
+
+(ert-deftest carve-test-delimited-comment-crosses-a-soft-break ()
+  "`{% ... %}' delimits a comment inside a PARAGRAPH, not inside a line.
+Its own rule said so - \"the whole run takes the comment face and the emphasis
+rules below never reach inside\" - and its body was `not-newline'."
+  (dolist (src '("a {% x\n*b* %} z\n" "- item\n\n  a {% x\n  *b* %} z\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*b*") 'font-lock-comment-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "*b*") 'carve-bold-face)))
+  ;; A BLANK LINE still ends it: the engine renders the second half of
+  ;; `a {% x' + blank + `*b* %} z' as a paragraph with a bold run in it.
+  (should (carve-test--face-includes
+           (carve-test--face-at "a {% x\n\n*b* %} z\n" "*b*") 'carve-bold-face)))
+
+(ert-deftest carve-test-editorial-comment-crosses-a-soft-break ()
+  "`{# ... #}' is bounded by its paragraph too, for the same reason."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a {# x\n*b* #} z\n" "*b*") 'carve-critic-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a {# x\n*b* #} z\n" "*b*") 'carve-bold-face))
+  ;; An EMPTY brace pair is still text (markup-carve/carve#1447), which the
+  ;; matcher has to keep saying now that the payload may be a newline.
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a {##} b\n" "{##}") 'carve-critic-face)))
+
+(ert-deftest carve-test-indented-delimiter-line-is-fence-payload ()
+  "A closer sits at the OPENER's own column; a run past it is content.
+A fence holding a fence is what every document describing Carve in Carve is
+made of, and an indented delimiter-shaped line ended the block early - so
+everything after the sample went live."
+  (should (carve-test--face-includes
+           (carve-test--face-at "~~~\n  ~~~\n*b*\n~~~\n" "*b*") 'carve-code-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "```\n  ```\n*b*\n```\n" "*b*") 'carve-code-face))
+  ;; ... and a fence that opens at a container's content column still closes
+  ;; at that column.
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ```\n  *b*\n  ```\n\n*c*\n" "*b*")
+           'carve-code-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ```\n  *b*\n  ```\n\n*c*\n" "*c*")
+           'carve-bold-face))
+  ;; The column is a COLUMN, not a spelling of whitespace: an opener indented
+  ;; with eight spaces still meets a closer indented with one tab.  A TILDE
+  ;; fence, because a backtick one is also claimed by the code-span matcher
+  ;; and would answer this question without the fence rule taking part.
+  (let ((src "        ~~~\n*b*\n\t~~~\n\n*c*\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*b*") 'carve-code-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "*c*") 'carve-bold-face))))
+
+(defun carve-test--face-after-partial-fontify (text from search)
+  "Fontify TEXT from FROM's line to its end only, then return SEARCH's face.
+`font-lock-ensure' hands the whole buffer to the keywords, which is not what a
+real editor does: it fontifies a CHUNK.  A multi-line construct is only
+reliable if the mode widens that chunk to the construct's bounds, and this is
+the only way to ask."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-set-defaults)
+    (goto-char (point-min))
+    (search-forward from)
+    (font-lock-fontify-region (line-beginning-position) (point-max))
+    (goto-char (point-min))
+    (search-forward search)
+    (goto-char (match-beginning 0))
+    (get-text-property (point) 'face)))
+
+(ert-deftest carve-test-a-chunk-is-widened-to-its-paragraph ()
+  "A multi-line run keeps its payload when only its SECOND line is fontified.
+The three matchers that reach past a line - an unpartnered backtick run and
+the two delimited comments - are handed a chunk of the buffer by font-lock,
+and a chunk starting inside a run has no opener to find."
+  (should (carve-test--face-includes
+           (carve-test--face-after-partial-fontify "a `x *b* y\nc *d* e\n" "c *d*" "*d*")
+           'carve-code-face))
+  (should (carve-test--face-includes
+           (carve-test--face-after-partial-fontify "a {% x\n*b* %} z\n" "*b*" "*b*")
+           'font-lock-comment-face))
+  (should (carve-test--face-includes
+           (carve-test--face-after-partial-fontify "a {# x\n*b* #} z\n" "*b*" "*b*")
+           'carve-critic-face))
+  ;; And widening does not hand the prose after a CLOSED block to the block:
+  ;; a chunk starting on the line after a closer walks back to the opener, and
+  ;; a delimiter run that opens its line is not an inline opener either.
+  (should (carve-test--face-includes
+           (carve-test--face-after-partial-fontify "```\na\n```\nb *c* d\n" "b *c*" "*c*")
+           'carve-bold-face)))

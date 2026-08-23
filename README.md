@@ -171,7 +171,16 @@ content column and that column is zero only at the top level. A per-line rule
 cannot tell a container's indent from a stray one, so an indented opener at the
 TOP level, where the language says the line is literal text, is painted as an
 opener anyway. That is the same trade the thematic-break rule has always made,
-and it is an over-approximation rather than missing highlighting.
+and it is an over-approximation rather than missing highlighting. A fence's
+CLOSER is exact, though: it has to sit at its opener's own column, because a
+delimiter-shaped line indented past the opener is content. That is what lets a
+document about Carve hold a Carve fence as sample text.
+
+Inline runs that hold a payload are bounded by their PARAGRAPH rather than by
+their line, which is where the engine bounds them: a backtick run with no
+partner is a code span to the end of its paragraph, and `{% ... %}` and
+`{# ... #}` may be written across a soft line break. A blank line ends all
+three.
 
 The constructs that are deliberately not fontified are listed with their
 reasons in `carve-mode.el`, under "Constructs this mode does not fontify, and
