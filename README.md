@@ -9,6 +9,11 @@ files.
 
 ## Features
 
+- Optional language-server support via
+  [carve-lsp](https://github.com/markup-carve/carve-lsp): diagnostics, hover,
+  completion, go-to-definition, workspace-wide rename, find-references, code
+  actions and formatting. See below - it is opt-in and does nothing unless
+  you ask for it.
 - ATX headings (`#` through `######`) with imenu and `outline-minor-mode`
   support.
 - The full mnemonic inline family: `/italic/`, `*bold*`, `_underline_`,
@@ -75,6 +80,64 @@ binary if it is not named `carve`.
 (`carve-heading-face`, `carve-bold-face`, `carve-italic-face`, and the rest),
 which inherit sensible defaults from the standard font-lock faces.
 
+## Language server (optional)
+
+`carve-mode` is font-lock: per-line regular expressions with no container
+state. That is a reading aid, and the limitations section below names the two
+places it costs something. Those are not fixable with a better regexp - they
+need a real parse of the document, which is what
+[carve-lsp](https://github.com/markup-carve/carve-lsp) has.
+
+What it adds is the class of question no font-lock rule can answer: which
+`[^note]` has no definition, which `</#id>` cross-reference points at nothing,
+and that `**bold**` is a Markdown habit that renders in Carve as two literal
+asterisks around bold text. Plus workspace-wide rename, go-to-definition,
+find-references, completion, code actions and formatting.
+
+```sh
+npm i -g @markup-carve/carve-lsp
+```
+
+```elisp
+(require 'carve-lsp)
+(carve-lsp-setup)
+```
+
+Nothing starts on its own. Loading `carve-lsp.el` registers no hook and starts
+no process - attaching a server spawns one, and that is your decision rather
+than a side effect of installing a major mode. If the server is not on
+`exec-path`, `carve-lsp-setup` is a no-op that RETURNS a reason instead of
+signalling, so an init file that calls it stays loadable on a machine that has
+never installed it.
+
+Both clients are supported, because Emacs has two and neither is the obvious
+default across versions:
+
+| Client | When |
+| --- | --- |
+| eglot | built in from Emacs 29, a package before that |
+| lsp-mode | when eglot is absent and lsp-mode is installed |
+
+`carve-lsp-setup` returns which one it registered with (`eglot` or `lsp-mode`),
+or `nil` and a reason.
+
+The workspace root is found by walking up for `.git`. That matters rather than
+being a detail: rename and find-references are workspace-wide, so renaming a
+heading id updates every cross-reference that points at it - and a server rooted
+at the file's own directory would silently narrow that to one folder.
+
+Options:
+
+```elisp
+(setq carve-lsp-command '("carve-lsp" "--stdio")) ; the server command
+(setq carve-lsp-settings nil)                     ; sent as the `carve' section
+(setq carve-lsp-autostart t)                      ; nil registers without hooking
+```
+
+Setting `carve-lsp-autostart` to `nil` registers the server with the client but
+leaves starting it to you - registration alone is enough if you want it
+available rather than automatic.
+
 ## Known limitations
 
 Carve's bare-delimiter emphasis obeys context-sensitive word-boundary rules
@@ -91,4 +154,6 @@ two places around composite figures (`::: figure`, PART 9 §4c). A bare
 language, but `carve-mode` fontifies it as a group. And the `^ ` caption line
 below a closing fence is a caption only after a `::: figure` closer; the mode
 fontifies it after any `:::` closer. Both are over-approximations rather than
-missing highlighting, and both need a real container model to fix.
+missing highlighting, and both need a real container model to fix - which is
+what the language server above has, so enabling it is the answer to this
+section rather than a better regexp.
