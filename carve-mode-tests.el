@@ -771,3 +771,40 @@ negative alone passes just as well when the search lands somewhere else."
   (should (carve-test--face-includes
            (carve-test--face-at "```\n# not a heading\n```\n" "# not")
            'carve-code-face)))
+
+(ert-deftest carve-test-inline-footnote-is-not-the-reference-rule ()
+  "`^[text]' is a construct of its own, and it had no rule.
+The ledger read it as implemented on the strength of the REFERENCE rule -
+`[^id]', one construct over - whose regexp cannot match a caret-bracket run at
+all.  Both halves are asserted, because the positive alone would pass just as
+happily if the reference rule were the one firing."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a ^[a note] b\n" "^[")
+           'carve-footnote-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a ^[a note] b\n" "a note")
+           'carve-link-text-face))
+  ;; ... and the reference spelling still fires on its own shape.
+  (should (carve-test--face-includes
+           (carve-test--face-at "a [^id] b\n" "[^id]")
+           'carve-footnote-face)))
+
+(ert-deftest carve-test-inline-span-is-not-the-code-span-rule ()
+  "`[text]{.c}' is a span, and its brackets had no rule.
+The ledger cited the CODE span rule, which matches a backtick run and cannot
+match a bracketed one: only the trailing attribute block was painted, by a
+different rule again."
+  (should (carve-test--face-includes
+           (carve-test--face-at "a [x]{.c} b\n" "[")
+           'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a [x]{.c} b\n" "x")
+           'carve-link-text-face))
+  ;; The `{' is what tells a span from a link, so a link is still a link.
+  (should (carve-test--face-includes
+           (carve-test--face-at "a [t](u) b\n" "u")
+           'carve-url-face))
+  ;; ... and a citation bracket is not a span.
+  (should (carve-test--face-includes
+           (carve-test--face-at "see [@key] here\n" "[@key")
+           'carve-mention-face)))
