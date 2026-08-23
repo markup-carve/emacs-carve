@@ -95,6 +95,11 @@ when the tool is absent, so the mode never hard-depends on it."
   "Face for `/italic/' text."
   :group 'carve)
 
+(defface carve-bold-italic-face
+  '((t :inherit (bold italic)))
+  "Face for the combined `/*bold italic*/' spelling."
+  :group 'carve)
+
 (defface carve-underline-face
   '((t :inherit underline))
   "Face for `_underline_' text."
@@ -200,6 +205,14 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   "Face for CriticMarkup."
   :group 'carve)
 
+(defface carve-typographic-face
+  '((t :inherit font-lock-constant-face))
+  "Face for the source spelling of a typographic replacement.
+Covers the dash runs, the ellipsis, the arrows, the comparison operators
+and the `(c)' family - every run the renderer replaces with a character
+the author did not type."
+  :group 'carve)
+
 ;;;; Helper matchers
 
 (defconst carve--heading-re
@@ -208,46 +221,129 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   ;; happily matched those spaces, so the separator was doing the content's
   ;; job.  `(in " \t")' for the separator and `(not (any " \t\n"))' for the
   ;; first content character - the newline in that set is what makes it bite.
-  (rx line-start (group (** 1 6 ?#)) (group (one-or-more " "))
+  (rx line-start (zero-or-more (in " \t"))
+      (group (** 1 6 ?#)) (group (one-or-more " "))
       (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
   "Match an ATX heading line (no trailing attribute blocks in Carve).")
 
 (defun carve--fontify-fenced-blocks (limit)
   "Search for a fenced code, raw, or math block between point and LIMIT.
 Set match groups so font-lock can color the opener, body, and closer.
-Group 1 is the whole opener line, group 2 the body, group 3 the closer."
+Group 1 is the whole opener line, group 2 the body, group 3 the closer,
+and group 4 the `=FORMAT' token of a raw block (empty when there is none).
+
+LEADING WHITESPACE IS PART OF THE OPENER.  A fence opens at its
+container's content column, which is zero only at the top level, so an
+indented fence inside a list item is a fence too.  Without that the
+indented opener fell through to the INLINE code-span rule, which took the
+third backtick as a span opener and ran across the body to the closer -
+two backticks left as prose and a multi-line span claiming a block.  It is
+the same over-approximation the thematic-break rule makes: a per-line
+matcher cannot tell a container's indent from a stray one, and painting
+an indented fence at the top level is the cheaper error."
   (catch 'done
     (while (re-search-forward
-            (rx line-start
+            (rx line-start (zero-or-more (in " \t"))
                 (group (or (>= 3 ?`) (>= 3 ?~)))
                 (zero-or-more not-newline) line-end)
             limit t)
       (let* ((fence (match-string 1))
              (char (aref fence 0))
              (len (length fence))
-             (opener-beg (match-beginning 0))
+             (opener-beg (match-beginning 1))
              (opener-end (save-excursion
                            (goto-char opener-beg)
                            (line-end-position)))
-             (closer-re (concat "^" (regexp-quote (make-string len char))
+             (format-beg (save-excursion
+                           (goto-char (+ opener-beg len))
+                           (when (looking-at (rx (zero-or-more (in " \t"))
+                                                 "=" (one-or-more (any "a-zA-Z0-9_-"))))
+                             (skip-chars-forward " \t")
+                             (point))))
+             (format-end (and format-beg (match-end 0)))
+             (closer-re (concat "^[ \t]*" (regexp-quote (make-string len char))
                                 (string char) "*[ \t]*$")))
         ;; Find the closing fence (same char, at least as long).
         (if (re-search-forward closer-re limit t)
             (let ((closer-beg (match-beginning 0))
                   (closer-end (match-end 0)))
-              ;; Match data: 0=all 1=opener line 2=body 3=closer.
+              ;; Match data: 0=all 1=opener line 2=body 3=closer 4=raw format.
               (set-match-data
                (list opener-beg closer-end
                      opener-beg opener-end                 ; opener line
                      (min (1+ opener-end) closer-beg) closer-beg ; body
-                     closer-beg closer-end))               ; closer
+                     closer-beg closer-end                 ; closer
+                     (or format-beg opener-beg)            ; raw `=FORMAT'
+                     (or format-end opener-beg)))
               (throw 'done t))
           ;; Unterminated fence: color to LIMIT and stop.
           (set-match-data
            (list opener-beg limit
                  opener-beg (line-end-position) (point) (point)
-                 (point) (point)))
+                 (point) (point)
+                 (or format-beg opener-beg) (or format-end opener-beg)))
           (goto-char limit)
+          (throw 'done t))))
+    nil))
+
+(defun carve--fontify-comment-blocks (limit)
+  "Search for a `%%%\'-fenced comment block between point and LIMIT.
+Group 1 is the whole block, opener and closer included.
+
+THE BODY OF A COMMENT FENCE IS NOT CARVE.  The syntax table makes each
+`%%%\' line a comment to end of line, which left the lines BETWEEN them
+ordinary text: `*b*\' inside a comment block came back bold, so the buffer
+claimed an emphasis run inside a block that renders nothing.  A per-line
+rule cannot see the pairing, so this walks it the way the fenced-code
+matcher does.
+
+THE CLOSER IS AN EXACT LENGTH MATCH, not the code fence\'s at-least-as-long
+\(spec PART 9 section 2\), and an UNCLOSED opener is a plain comment line
+\(section 28\) - so a run with no closer is left to the line rule rather
+than swallowing the rest of the buffer."
+  (catch 'done
+    (while (re-search-forward
+            (rx line-start (zero-or-more (in " \t"))
+                (group "%%" (one-or-more "%"))
+                (zero-or-more not-newline) line-end)
+            limit t)
+      (let* ((fence (match-string 1))
+             (opener-beg (match-beginning 1))
+             (closer-re (concat "^[ \t]*" (regexp-quote fence) "[^%\n]*$")))
+        (when (re-search-forward closer-re limit t)
+          (set-match-data (list opener-beg (match-end 0)
+                                opener-beg (match-end 0)))
+          (throw 'done t))
+        (goto-char (line-end-position))))
+    nil))
+
+(defconst carve--hyphen-run-re
+  (rx (group (>= 2 "-")) (not (any "-")))
+  "Match a run of two or more hyphens, bounded on the right.")
+
+(defun carve--fontify-hyphen-run (limit)
+  "Search for a converting hyphen run between point and LIMIT.
+
+A HYPHEN RUN OPENING A WORD AFTER WHITESPACE IS A FLAG, NOT A DASH
+\(markup-carve/carve#1443\): whitespace or start-of-line before the run and
+a non-whitespace character after it means the run stays literal, which is
+what keeps `git log --oneline\' a flag.  Every other position converts, and
+the LENGTH decides into what - which this does not need to know, because
+the em dash and the en dash are the same face.
+
+The guard is why this is a function: it is a condition on both sides of the
+run at once, and an Emacs regexp has no lookaround to spell it with."
+  (catch 'done
+    (while (re-search-forward carve--hyphen-run-re limit t)
+      (let* ((beg (match-beginning 1))
+             (end (match-end 1))
+             (before (if (> beg (point-min)) (char-before beg) ?\n))
+             (after (char-after end))
+             (space-before (memq before '(?\s ?\t ?\n ?\xa0)))
+             (word-after (and after (not (memq after '(?\s ?\t ?\n ?\xa0))))))
+        (goto-char end)
+        (unless (and space-before word-after)
+          (set-match-data (list beg end beg end))
           (throw 'done t))))
     nil))
 
@@ -255,12 +351,28 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
 
 (defconst carve-font-lock-keywords
   `(
-    ;; Fenced code / raw / math blocks (multi-line; keep early so their
-    ;; bodies are not re-fontified by inline rules).
+    ;; Code block, raw block, math block.
+    ;; The fences, kept early so their bodies are not re-fontified by inline
+    ;; rules.  Group 4 is the
+    ;; `=FORMAT' token of a RAW block, which is what tells one from a code
+    ;; block: its body reaches the output verbatim instead of escaped.  It is
+    ;; a group of this matcher rather than a rule of its own so that it can
+    ;; only ever fire on a real opener - a rule matching the same shape would
+    ;; also match a fence-shaped LINE inside another block's verbatim body.
     (carve--fontify-fenced-blocks
      (1 'carve-code-face)
      (2 'carve-code-face keep)
-     (3 'carve-code-face))
+     (3 'carve-code-face)
+     (4 'carve-attribute-face t))
+
+    ;; Comment block: a `%%%' fence and everything between it and its closer.
+    ;;
+    ;; The syntax table already makes each FENCE line a comment; this is what
+    ;; makes the BODY one.  Kept beside the code fence and for the same reason:
+    ;; both hold a payload that is not Carve, and an inline rule reaching into
+    ;; either paints a claim the document does not make.
+    (carve--fontify-comment-blocks
+     (1 'font-lock-comment-face keep))
 
     ;; Frontmatter at document start: ---, ---toml, ---json ... ---
     (carve--fontify-frontmatter
@@ -271,8 +383,12 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-markup-face)
      (3 'carve-heading-face))
 
-    ;; Block comment fences %%% ... %%% and line comments %%.
-    (,(rx line-start "%%" (zero-or-more not-newline) line-end)
+    ;; Comment line.
+    ;; A `%%' run at the start of a line, to end of line.  It paints the fence
+    ;; lines of the block above too, which is why that one only has to reach
+    ;; the body.
+    (,(rx line-start (zero-or-more (in " \t"))
+          "%%" (zero-or-more not-newline) line-end)
      (0 'font-lock-comment-face))
 
     ;; Block-attribute line: {#id .class key=val} on its own line.  The payload
@@ -336,22 +452,53 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; It has always done so, which is why the caption position already works
     ;; here; making it exact needs a real container model, which is
     ;; tree-sitter-carve's job rather than font-lock's.
-    (,(rx line-start (group (>= 3 ?:))
+    (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
           (one-or-more " ")
           (group "figure")
           (zero-or-more (in " \t")) line-end)
      (1 'carve-figure-group-face)
      (2 'carve-figure-group-face))
 
+    ;; Local hard-break block: `::: \', a RECOGNIZED `:::' type whose body
+    ;; turns every soft break in its direct paragraph children into a hard
+    ;; break (grammar PART 2, `local_hard_break_block').
+    ;;
+    ;; It is the one container whose kind word is punctuation, and the generic
+    ;; rule below reads its kind word as a run of `[a-zA-Z0-9_|]' - so the
+    ;; backslash matched the EMPTY tail of that run and came back as prose,
+    ;; indistinguishable from a fence with no type at all.  The separator is a
+    ;; space run and never a tab, for the reason spelled out on the figure rule
+    ;; above.
+    (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
+          (one-or-more " ")
+          (group "\\")
+          (zero-or-more (in " \t")) line-end)
+     (1 'carve-admonition-face)
+     (2 'carve-admonition-face))
+
+    ;; Line block: `::: |', the verse container that keeps its line structure.
+    ;;
+    ;; Its kind word is inside the generic rule's character class, so the fence
+    ;; and the pipe were already painted at column zero - but only there.  An
+    ;; INDENTED `::: |' fell through to the table rule, which took the pipe for
+    ;; a cell delimiter: a verse container read as a one-column table.
+    (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
+          (one-or-more " ")
+          (group "|")
+          (zero-or-more (in " \t")) line-end)
+     (1 'carve-admonition-face)
+     (2 'carve-admonition-face))
+
     ;; Fenced divs and admonitions: ::: type "Title" [Label]
-    (,(rx line-start (group (>= 3 ?:))
+    (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
           (zero-or-more space)
           (group (zero-or-more (any "a-zA-Z0-9_|")))
           (zero-or-more not-newline) line-end)
      (1 'carve-admonition-face)
      (2 'carve-admonition-face))
 
-    ;; Tables: header marker |= |=> |=~ and plain pipes.
+    ;; Table.
+    ;; The header marker |= |=> |=~ and the plain pipes.
     (,(rx (group "|" (opt "=") (opt (any "<>~"))))
      (1 'carve-table-face))
 
@@ -400,21 +547,70 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-list-marker-face))
 
     ;; Definition list: :: term  /  :  definition
-    (,(rx line-start (group (or "::" ":")) (one-or-more " ")
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group (or "::" ":")) (one-or-more " ")
           (not (any " \t\n")))
      (1 'carve-markup-face))
 
     ;; Footnote definition: [^id]:
-    (,(rx line-start (group "[^" (one-or-more (not (any "]"))) "]" ":"))
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group "[^" (one-or-more (not (any "]"))) "]" ":"))
      (1 'carve-footnote-face))
 
-    ;; Reference / link definition: [label]: url
-    (,(rx line-start (group "[" (one-or-more (not (any "]"))) "]" ":"))
+    ;; Reference definition: [label]: url
+    ;;
+    ;; Named for the definition and nothing else.  It used to read "Reference /
+    ;; link definition", and a rule that matches only a definition line was the
+    ;; nearest thing in this file to the words "reference link" - so the
+    ;; construct ledger cited it as the evidence that this mode highlights a
+    ;; reference LINK, one construct over (markup-carve/emacs-carve#19).
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group "[" (one-or-more (not (any "]"))) "]" ":"))
      (1 'carve-footnote-face))
 
-    ;; Inline footnote reference: [^id]
+    ;; Abbreviation definition: *[TERM]: expansion
+    ;;
+    ;; An invisible block, like the two definitions above: it renders nothing
+    ;; where it sits and supplies the title for every later occurrence of the
+    ;; term.  The term is a SINGLE alphanumeric word (grammar PART 5) - a
+    ;; bracketed term holding a space or a dot is not a definition and the line
+    ;; stays prose, so the character class is what does the rejecting.
+    (,(rx line-start (zero-or-more (in " \t"))
+          (group "*[" (one-or-more (any "a-zA-Z0-9")) "]" ":")
+          (one-or-more " ") (not (any " \t\n")))
+     (1 'carve-markup-face))
+
+    ;; Footnote reference.
+    ;; [^id], a reference to a footnote defined elsewhere.
     (,(rx (group "[^" (one-or-more (not (any "]"))) "]"))
      (1 'carve-footnote-face))
+
+    ;; Inline footnote.
+    ;; `^[content]' carries its own text (markup-carve/carve#404) and had no
+    ;; rule: the row read as implemented on the strength of the REFERENCE rule
+    ;; above, one construct over, and the run itself came back as prose.
+    (,(rx (group "^[") (group (zero-or-more (not (any "]\n")))) (group "]"))
+     (1 'carve-footnote-face)
+     (2 'carve-link-text-face)
+     (3 'carve-footnote-face))
+
+    ;; Reference image and collapsed reference image.
+    ;; ![alt][ref] and ![alt][].
+    ;;
+    ;; An image has the same three spellings a link has, and only the inline
+    ;; one had a rule - so `![alt][ref]' was claimed by the reference LINK rule
+    ;; below, which starts one character to the right: the `!' was left as
+    ;; prose and the whole thing read as a link to a reference.  The label is
+    ;; starred, so the collapsed form is the same match with nothing between
+    ;; the second pair of brackets.
+    (,(rx (group "!" "[") (group (zero-or-more (not (any "]")))) (group "]")
+          (group "[") (group (zero-or-more (not (any "]")))) (group "]"))
+     (1 'carve-markup-face)
+     (2 'carve-link-text-face)
+     (3 'carve-markup-face)
+     (4 'carve-markup-face)
+     (5 'carve-url-face)
+     (6 'carve-markup-face))
 
     ;; Images: ![alt](src)
     (,(rx (group "!" "[") (group (zero-or-more (not (any "]")))) (group "]")
@@ -430,7 +626,8 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx (group "</#" (one-or-more (not (any ">"))) ">"))
      (1 'carve-url-face))
 
-    ;; Inline links: [text](url) and reference links [text][ref].
+    ;; Inline link.
+    ;; [text](url), and the titled form.
     (,(rx (group "[") (group (zero-or-more (not (any "]")))) (group "]")
           (group "(") (group (zero-or-more (not (any ")")))) (group ")"))
      (1 'carve-markup-face)
@@ -439,6 +636,13 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (4 'carve-markup-face)
      (5 'carve-url-face)
      (6 'carve-markup-face))
+    ;; Reference link and collapsed reference link.
+    ;; [text][ref] and [text][].
+    ;;
+    ;; One rule for both: the second label is starred, so an empty one matches
+    ;; as readily as a named one.  Written down because the collapsed spelling
+    ;; is a construct of its own in the grammar, and a rule nobody names reads
+    ;; as a construct nobody implemented.
     (,(rx (group "[") (group (zero-or-more (not (any "]")))) (group "]")
           (group "[") (group (zero-or-more (not (any "]")))) (group "]"))
      (1 'carve-markup-face)
@@ -474,11 +678,35 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
      (1 'carve-code-face)
      (2 'carve-attribute-face))
 
-    ;; Inline code span: `code`
+    ;; Code span.
+    ;; The inline `code` run.
     (,(rx (group "`" (minimal-match (one-or-more (not (any "`")))) "`"))
      (1 'carve-code-face keep))
 
-    ;; A DELIMITED INLINE COMMENT, `{% ... %}' (PART 9 S21a,
+    ;; Escaped char: a backslash before an ASCII punctuation character.
+    ;;
+    ;; The pair is markup: the backslash is consumed and the character is
+    ;; literal, so `\\*not bold\\*' is four words and no emphasis.  Claiming the
+    ;; pair is also what ENFORCES that - font-lock does not override a face an
+    ;; earlier keyword set, and a delimiter that already carries this face can
+    ;; no longer open a run for the emphasis rules further down.
+    ;;
+    ;; It sits after the verbatim rules on purpose: inside a code span a
+    ;; backslash is content, and those rules have already claimed it.
+    (,(rx (group "\\" (any "!-/:-@[-`{-~")))
+     (1 'carve-markup-face))
+
+    ;; Hard break: a backslash at the end of a line.
+    ;;
+    ;; The one inline mark that leaves nothing behind when rendered, which is
+    ;; exactly why it wants a face: an accidental trailing backslash and a
+    ;; deliberate line break looked identical.  A newline is not punctuation,
+    ;; so the escape rule above cannot reach it.
+    (,(rx (group "\\") line-end)
+     (1 'carve-markup-face))
+
+    ;; Braced comment.
+    ;; The delimited comment `{% ... %}' (PART 9 S21a,
     ;; markup-carve/carve#1239).  It hides its payload the way `%%' hides the
     ;; rest of a line, so the whole run takes the comment face and the emphasis
     ;; rules below never reach inside: `{% *not bold* %}' must not colour a bold
@@ -489,25 +717,91 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx "{%" (minimal-match (zero-or-more not-newline)) "%}")
      (0 'font-lock-comment-face))
 
-    ;; CriticMarkup: {+ins+} {-del-} {~old~>new~} {# comment #}
-    ;; The delimiter set is the literal chars + - ~ # (list each member
-    ;; separately so `-' is not read as a range that would also swallow
-    ;; brace emphasis such as `{^..^}', `{,..,}', `{=..=}').
-    ;; A `{~x~}` with NO `~>` arrow is a forced strikethrough, not a
-    ;; substitution, so the tilde form requires the arrow.
-    (,(rx (group "{" (or (seq (any "+" "-" "#") (minimal-match (zero-or-more not-newline))
-                              (any "+" "-" "#"))
-                         (seq "~" (minimal-match (zero-or-more not-newline)) "~>"
-                              (minimal-match (zero-or-more not-newline)) "~"))
-                 "}"))
+    ;; Addition: {+ins+}
+    ;;
+    ;; The four editorial constructs were one rule under one name, so four rows
+    ;; of the construct ledger read as unimplemented while the colour was
+    ;; already there (markup-carve/emacs-carve#19).  Splitting them is what
+    ;; lets each say what it is; the face stays shared, because the reader's
+    ;; question is whether a run is editorial markup at all.
+    ;;
+    ;; EVERY ONE REQUIRES CONTENT.  An empty brace pair is TEXT, not an empty
+    ;; edit (markup-carve/carve#1447): `{++}' and `{##}' render literally, and
+    ;; the combined rule painted both as markup because its content was a
+    ;; `zero-or-more'.
+    (,(rx (group "{+" (minimal-match (one-or-more not-newline)) "+}"))
      (1 'carve-critic-face))
 
-    ;; Brace emphasis, superscript, and subscript: {^...^} {,...,} {*...*}
-    ;; {/.../} {_..._} {~...~} {=...=}.  Superscript and subscript exist only
-    ;; in these braced forms; a bare `^' or `,' is literal text.
-    (,(rx "{" (group (any "*/_~^,=")) (minimal-match (one-or-more not-newline))
-          (backref 1) "}")
-     (0 'carve-markup-face))
+    ;; Deletion: {-del-}
+    (,(rx (group "{-" (minimal-match (one-or-more not-newline)) "-}"))
+     (1 'carve-critic-face))
+
+    ;; Substitution: {~old~>new~}
+    ;;
+    ;; A `{~x~}' with NO `~>' arrow is a forced strikethrough, not a
+    ;; substitution, so the arrow is required.
+    (,(rx (group "{~" (minimal-match (zero-or-more not-newline)) "~>"
+                 (minimal-match (zero-or-more not-newline)) "~}"))
+     (1 'carve-critic-face))
+
+    ;; Editorial comment: {# comment #}
+    (,(rx (group "{#" (minimal-match (one-or-more not-newline)) "#}"))
+     (1 'carve-critic-face))
+
+    ;; The BRACED (forced) spellings: `{*x*}' emphasizes intraword, where the
+    ;; bare `*x*' obeys the word-boundary rules (PART 9 S22).  Every mark has
+    ;; one, and superscript and subscript have ONLY this form - a bare `^' or
+    ;; `,' is literal text.
+    ;;
+    ;; SEVEN RULES RATHER THAN ONE, and the reason is what they paint.  A
+    ;; single rule keyed on a back-reference cannot tell which delimiter it
+    ;; matched, so all seven took `carve-markup-face': a forced bold read the
+    ;; same as a forced strikethrough, and neither read like the bare spelling
+    ;; it means.  Split, each one carries the face of the mark it is - and each
+    ;; is named, which is what the construct ledger could not see before
+    ;; (markup-carve/emacs-carve#19).
+    ;;
+    ;; The content is `one-or-more', so an empty pair stays text: `{^^}' and
+    ;; `{**}' are prose, the same ruling the editorial rules above follow.
+
+    ;; Forced strong: {*...*}
+    (,(rx (group "{*" (minimal-match (one-or-more not-newline)) "*}"))
+     (1 'carve-bold-face))
+
+    ;; Forced emphasis: {/.../}
+    (,(rx (group "{/" (minimal-match (one-or-more not-newline)) "/}"))
+     (1 'carve-italic-face))
+
+    ;; Forced underline: {_..._}
+    (,(rx (group "{_" (minimal-match (one-or-more not-newline)) "_}"))
+     (1 'carve-underline-face))
+
+    ;; Forced strike: {~...~}
+    (,(rx (group "{~" (minimal-match (one-or-more not-newline)) "~}"))
+     (1 'carve-strike-face))
+
+    ;; Forced highlight: {=...=}
+    (,(rx (group "{=" (minimal-match (one-or-more not-newline)) "=}"))
+     (1 'carve-highlight-face))
+
+    ;; Superscript: {^...^}
+    (,(rx (group "{^" (minimal-match (one-or-more not-newline)) "^}"))
+     (1 'carve-markup-face))
+
+    ;; Subscript: {,...,}
+    (,(rx (group "{," (minimal-match (one-or-more not-newline)) ",}"))
+     (1 'carve-markup-face))
+
+    ;; Inline span.
+    ;; `[text]{.c}' - a bracketed run whose only job is to carry the attribute
+    ;; block that follows it.  The block itself is the rule below; the brackets
+    ;; had nothing, so the row cited the CODE span rule.  The `{' is what
+    ;; distinguishes the span from a link, so it is required and not consumed.
+    (,(rx (group "[") (group (zero-or-more (not (any "][\n")))) (group "]")
+          "{")
+     (1 'carve-markup-face)
+     (2 'carve-link-text-face)
+     (3 'carve-markup-face))
 
     ;; Inline attribute block attached to a node: {.class #id key=val}
     ;;
@@ -521,16 +815,32 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     ;; not cross a line (markup-carve/carve#897 - only the standalone attribute
     ;; LINE continues), and without that exclusion an unclosed block ran on
     ;; through the prose below it to the next `}' anywhere in the buffer.
+    ;;
+    ;; The FIRST character after the `.' or `#' is a strict identifier start,
+    ;; the way it is on the attribute LINE above.  Without it `{##}' read as an
+    ;; id of `#': an EMPTY BRACE PAIR IS TEXT (markup-carve/carve#1447), and
+    ;; this rule was the last one still claiming one.
     (,(let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
                                            (zero-or-more
                                             (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
         (rx-to-string
-         `(group "{" (or (seq (any ".#") (one-or-more (not (any "}{\n"))))
+         `(group "{" (or (seq (any ".#") (any "a-zA-Z_")
+                              (zero-or-more (not (any "}{\n"))))
                          (seq ,lang-item
                               (opt (seq (one-or-more (any " \t"))
                                         (one-or-more (not (any "}{\n")))))))
                  "}")))
      (1 'carve-attribute-face))
+
+    ;; Bold italic: the combined `/*...*/' opener.
+    ;;
+    ;; One construct, not a bold nested in an italic: the boundary guards apply
+    ;; to the outer `/' and the inner `*' is part of a two-character token.  It
+    ;; has to precede the bare italic rule below, which matched `/*both*/' as a
+    ;; plain italic - a run painted as one mark when the renderer gives it two.
+    (,(rx (or bol space (any "([{"))
+          (group "/*" (minimal-match (one-or-more (not (any "\n")))) "*/"))
+     (1 'carve-bold-italic-face))
 
     ;; Bare emphasis delimiters (word-boundary approximation).
     (,(rx (or bol space (any "([{")) (group "*" (minimal-match (one-or-more (not (any "*\n")))) "*"))
@@ -573,6 +883,19 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
     (,(rx (or bol space (any "([")) (group "#" (one-or-more (any "a-zA-Z0-9._-"))))
      (1 'carve-tag-face))
 
+    ;; Extension inline: :name[content]
+    ;;
+    ;; The name must start with a letter or `_' (grammar PART 3), so `:1[x]' is
+    ;; literal text - which is what the character classes here say.  Distinct
+    ;; from the `:name:' symbol below by its closing bracket, and from a
+    ;; definition-list line by having no space after the colon.
+    (,(rx (group ":" (any "a-zA-Z_") (zero-or-more (any "a-zA-Z0-9_-")))
+          (group "[") (group (zero-or-more (not (any "]\n")))) (group "]"))
+     (1 'carve-markup-face)
+     (2 'carve-markup-face)
+     (3 'carve-link-text-face)
+     (4 'carve-markup-face))
+
     ;; Symbol shortcodes :name: (word boundary; first name char is a letter,
     ;; digit, `+` or `-`, so `:+1:` / `:-1:` match but `:_x:` stays literal).
     (,(rx (or bol space (any "([")) (group ":" (any "a-zA-Z0-9+-") (zero-or-more (any "a-zA-Z0-9_+-")) ":"))
@@ -585,8 +908,81 @@ Group 1 is the whole opener line, group 2 the body, group 3 the closer."
           (group (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)))
           (zero-or-more space) line-end)
      (1 'carve-markup-face))
+
+    ;; THE TYPOGRAPHIC REPLACEMENTS (PART 9 S8).  Every rule below matches a run the
+    ;; renderer REPLACES with a character the author did not type, so the face
+    ;; is on the source spelling rather than on any markup: it is the only way
+    ;; the buffer can show that `-->' will not survive as three characters.
+    ;;
+    ;; They come LAST in this list, after every verbatim and every block rule,
+    ;; because font-lock does not override a face an earlier keyword set - so a
+    ;; `--' inside a code span, a comment, a URL or a thematic break is already
+    ;; claimed and stays claimed.  Longest-first within the family, so `<-->'
+    ;; is one arrow rather than an arrow and a dash.
+
+    ;; Braced en dash `{--}'.
+    ;; It is an EN DASH, not an empty deletion (markup-carve/carve#1447).
+    ;; It exists for the position the flag guard leaves unspellable - a dash
+    ;; with whitespace before it and a word after it.  It leads the family
+    ;; because it is the longest token in it: the hyphen-run rule below sees a
+    ;; `--' left-flanked by the opening brace and would convert that, leaving the
+    ;; braces as prose.
+    (,(rx (group "{--}"))
+     (1 'carve-typographic-face))
+
+    ;; Smart arrows: <--> <-- --> <=> <== ==>, and the deprecated <-> <- ->
+    (,(rx (group (or "<-->" "<--" "-->" "<=>" "<==" "==>" "<->" "<-" "->")))
+     (1 'carve-typographic-face))
+
+    ;; Comparison: != <= >=
+    (,(rx (group (or "!=" "<=" ">=")))
+     (1 'carve-typographic-face))
+
+    ;; Em dash, en dash.
+    ;; A hyphen run, minus the flag shapes.
+    (carve--fontify-hyphen-run
+     (1 'carve-typographic-face))
+
+    ;; Ellipsis: ...
+    (,(rx (group "..."))
+     (1 'carve-typographic-face))
+
+    ;; Typographic symbols: (c) (r) (tm) +-
+    (,(rx (group (or "(c)" "(r)" "(tm)" "+-")))
+     (1 'carve-typographic-face))
     )
   "Font-lock keywords for `carve-mode'.")
+
+;;;; Constructs this mode does not fontify, and why
+;; The rest of the language has a rule above.  These do not, and each line says
+;; what the obstacle is rather than that there is one - a construct with no
+;; rule and no reason is indistinguishable from one nobody looked at
+;; (markup-carve/emacs-carve#19).
+;; `paragraph'     - the fallback block.  It has no marker and no delimiter,
+;;                   and its content is the default face by definition, so
+;;                   there is nothing for a rule to match or to paint.
+;; `blank_line'    - carries no marker of its own.
+;; `soft_break'    - a newline inside a paragraph; same reason.
+;; `smart_quote'   - the construct is EVERY `"' and `'' in prose.  A rule for
+;;                   it would put a face on the apostrophe of every
+;;                   contraction, and it cannot separate the quote an author
+;;                   means from the one inside a word: the information a face
+;;                   would add is already in the character.  This is the one
+;;                   entry here that is a judgement rather than an obstacle -
+;;                   the whole rest of the typographic family IS painted above,
+;;                   and adding this one is one regexp.  The call is on the
+;;                   record as markup-carve/emacs-carve#23 rather than only
+;;                   here, so it can be overturned in one commit.
+;; NOT ON THIS LIST, because they are over-approximations rather than gaps:
+;; every block opener here allows a leading indent, and a per-line rule cannot
+;; tell a container's content column from a stray indent at the top level,
+;; where the language says an indented opener is literal text.  See the
+;; README's "Known limitations".
+;; ONE UNBROKEN COMMENT BLOCK, deliberately.  The construct ledger reads the
+;; FIRST line after every gap in a comment run as a rule name, so a blank `;;'
+;; line here would put these sentences into this surface's rule vocabulary and
+;; seed the very rows they deny - `paragraph' read as implemented, citing the
+;; line that says it is not.
 
 (defun carve--fontify-frontmatter (limit)
   "Fontify a leading frontmatter block between point and LIMIT.
@@ -609,6 +1005,15 @@ Only matches when the block starts on the first line of the buffer."
     ;; sequence is expressed with the `1'/`2' comment flags on `%'.
     (modify-syntax-entry ?% ". 12" table)
     (modify-syntax-entry ?\n ">" table)
+    ;; Inline comment.
+    ;; The same two entries carry the TRAILING `%%' run attached to content,
+    ;; which is a construct of its own: `x %% note' hides the rest of its line
+    ;; the way a `%%' line does.  It has no font-lock rule and wants none - the
+    ;; syntax table has claimed it before the keywords run - so this is where
+    ;; the construct is named.  Its payload is inert for the same reason.
+    ;; The claim is too WIDE, though, and that is markup-carve/emacs-carve#22:
+    ;; a `%%' inside a code span, a link label or a fenced body opens a comment
+    ;; there too, which needs a `syntax-propertize-function' to fix.
     ;; Treat backtick as a string-ish delimiter for code spans.
     (modify-syntax-entry ?` "$" table)
     ;; Underscore and slash are punctuation, not word constituents, so the
@@ -631,7 +1036,8 @@ Only matches when the block starts on the first line of the buffer."
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward carve--heading-re nil t)
-        ;; Skip headings inside fenced code by checking the code face.
+        ;; Skip a heading inside a verbatim body by checking for the code
+        ;; face.
         (unless (eq (get-text-property (match-beginning 3) 'face)
                     'carve-code-face)
           (let* ((level (length (match-string 1)))
