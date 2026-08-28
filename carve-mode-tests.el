@@ -662,6 +662,21 @@ rediscovered."
            (carve-test--face-at "- item\n\n  ::: \\\n  a\n  :::\n" "\\")
            'carve-admonition-face)))
 
+(ert-deftest carve-test-fenced-block-quote ()
+  "`::: >\' is the quote the `>\'-prefixed form builds, not a container.
+The sigil is outside the generic rule\'s kind-word class, so that class
+matched the empty string before it and an admonition claimed the fence."
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: >\na\n:::\n" ">")
+           'carve-blockquote-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "::: >\na\n:::\n" ">")
+               'carve-admonition-face))
+  ;; ... and inside a container, where the content column is not zero.
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n\n  ::: >\n  a\n  :::\n" ">")
+           'carve-blockquote-face)))
+
 (ert-deftest carve-test-line-block-pipe-is-not-a-table ()
   "An indented `::: |' is a verse container, not a one-column table.
 The table rule matched the pipe of an INDENTED line block, so a container
