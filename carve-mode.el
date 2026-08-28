@@ -611,6 +611,20 @@ renders nothing came back bold."
      (1 'carve-admonition-face)
      (2 'carve-admonition-face))
 
+    ;; Fenced block quote: `::: >', the third sigil (markup-carve/carve#1718).
+    ;; It builds the same quote the `>'-prefixed form does, written without a
+    ;; marker on every line, so the opener takes the QUOTE's face rather than a
+    ;; container's - the sigil is the only thing on the line that says which
+    ;; container this is.  It has to precede the generic rule below for the
+    ;; reason the backslash does: `>' is outside that rule's kind-word class, so
+    ;; the class matched empty and an admonition claimed the fence.
+    (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
+          (one-or-more " ")
+          (group ">")
+          (zero-or-more (in " \t")) line-end)
+     (1 'carve-blockquote-face)
+     (2 'carve-blockquote-face))
+
     ;; Line block: `::: |', the verse container that keeps its line structure.
     ;;
     ;; Its kind word is inside the generic rule's character class, so the fence
