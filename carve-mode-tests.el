@@ -662,6 +662,43 @@ rediscovered."
            (carve-test--face-at "- item\n\n  ::: \\\n  a\n  :::\n" "\\")
            'carve-admonition-face)))
 
+(ert-deftest carve-test-continuation-marker ()
+  "A lone `+\' is the continuation marker, and it is painted.
+It transfers the next flush-left block to the container whose marker column it
+sits at, and opens no item of its own - so an unpainted one reads as prose."
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n+\nblock\n" "+")
+           'carve-markup-face))
+  ;; in a block quote, which takes the same marker
+  (should (carve-test--face-includes
+           (carve-test--face-at "> quoted\n+\n> attached\n" "+")
+           'carve-markup-face)))
+
+(ert-deftest carve-test-table-continuation-row ()
+  "`+ cell | \' merges into the cell above, so its marker is table punctuation.
+It used to take the list-marker face, from a bullet rule that wrongly counted
+`+\' as a bullet."
+  (should (carve-test--face-includes
+           (carve-test--face-at "| a | b |\n| x | y |\n+ more | z |\n" "+")
+           'carve-table-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "| a | b |\n| x | y |\n+ more | z |\n" "+")
+               'carve-list-marker-face)))
+
+(ert-deftest carve-test-plus-is-not-a-bullet ()
+  "`+ x\' and `+ [ ] x\' are PARAGRAPHS, so neither takes a marker face.
+Both rendered as prose in the engine while this mode painted them as list
+markers, which is what put the table row\'s marker in the list palette too."
+  (should-not (carve-test--face-at "+ x\n" "+"))
+  (should-not (carve-test--face-at "+ [ ] x\n" "+"))
+  ;; the real bullets are unaffected
+  (should (carve-test--face-includes
+           (carve-test--face-at "- item\n" "-") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "* item\n" "*") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "- [x] done\n" "-") 'carve-list-marker-face)))
+
 (ert-deftest carve-test-fenced-block-quote ()
   "`::: >\' is the quote the `>\'-prefixed form builds, not a container.
 The sigil is outside the generic rule\'s kind-word class, so that class

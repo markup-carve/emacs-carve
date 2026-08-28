@@ -671,7 +671,7 @@ renders nothing came back bold."
     ;; carve-js both render `- [ ] ' (nothing after) as `<ul><li>[ ]</li></ul>',
     ;; a plain bullet holding the literal `[ ]'.
     (,(rx line-start (zero-or-more (in " \t"))
-          (group (any "-*+")) (one-or-more " ")
+          (group (any "-*")) (one-or-more " ")
           (group "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]")
           (one-or-more " ") (not (any " \t\n")))
      (1 'carve-list-marker-face)
@@ -690,10 +690,38 @@ renders nothing came back bold."
           (or (seq (one-or-more " ") (not (any " \t\n"))) "{"))
      (1 'carve-list-marker-face))
 
-    ;; Bullet list markers: - * + followed by a space and content.
-    (,(rx line-start (zero-or-more (in " \t")) (group (any "-*+"))
+    ;; Bullet list markers: - and * followed by a space and content.
+    ;;
+    ;; `+` IS NOT A BULLET (PART 9 §17, and trap 6 of the authoring card): it is
+    ;; the continuation marker, and `+ x` renders as a paragraph. Including it
+    ;; here painted two shapes the engine calls prose - `+ x` and `+ [ ] x` -
+    ;; and stole the table continuation row's marker, which is the one `+` line
+    ;; that DOES open something (markup-carve/emacs-carve#31).
+    (,(rx line-start (zero-or-more (in " \t")) (group (any "-*"))
           (one-or-more " ") (not (any " \t\n")))
      (1 'carve-list-marker-face))
+
+    ;; The CONTINUATION MARKER: a lone `+' on its own line.
+    ;;
+    ;; `continuation_marker = '+', newline` - any character between the `+' and
+    ;; the line end is content, so the marker is the whole line or it is not a
+    ;; marker at all. It transfers the next flush-left block to the container
+    ;; whose marker column it sits at: a list item, a block quote, a footnote
+    ;; body or a definition description. It opens no item of its own, which is
+    ;; why an unpainted one reads as ordinary prose rather than as a gap.
+    (,(rx line-start (zero-or-more (in " \t")) (group "+")
+          (zero-or-more (in " \t")) line-end)
+     (1 'carve-markup-face))
+
+    ;; A TABLE CONTINUATION ROW: `+' then cells, ending in a pipe.
+    ;;
+    ;; `continuation_row = '+', table_cell, {'|', table_cell}, '|', newline`.
+    ;; It merges into the cell above it, so its marker is table punctuation
+    ;; rather than a list marker - which is what it used to take, from the
+    ;; bullet rule above.
+    (,(rx line-start (zero-or-more (in " \t")) (group "+")
+          (zero-or-more not-newline) "|" (zero-or-more (in " \t")) line-end)
+     (1 'carve-table-face))
 
     ;; Definition list: :: term  /  :  definition
     (,(rx line-start (zero-or-more (in " \t"))
