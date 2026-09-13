@@ -190,6 +190,11 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   "Face for `@mentions'."
   :group 'carve)
 
+(defface carve-include-face
+  '((t :inherit font-lock-preprocessor-face))
+  "Face for a reserved include directive, `{{ path }}'."
+  :group 'carve)
+
 (defface carve-tag-face
   '((t :inherit font-lock-builtin-face))
   "Face for `#tags'."
@@ -862,6 +867,20 @@ renders nothing came back bold."
     ;; which an Emacs regexp can say (markup-carve/emacs-carve#21).
     (carve--fontify-code-span
      (1 'carve-code-face keep))
+
+    ;; The reserved include directive `{{ path #section @key:value }}' (PART 9
+    ;; section 19).  The core leaves it literal and a processor expands it only
+    ;; when a host supplies a resolver - but a mode that does not know the shape
+    ;; does not leave it alone: the directive's own selector is spelled with
+    ;; constructs this file already matches, so `#section' took the tag face and
+    ;; an option slot took the mention face.
+    ;;
+    ;; ORDER IS THE WHOLE MECHANISM here.  It sits AFTER the code-span keywords,
+    ;; so a directive inside `code' keeps the code face (font-lock does not
+    ;; override a face already set), and BEFORE the mention and tag keywords, so
+    ;; they find the run already claimed.
+    (,(rx (group "{{" (zero-or-more (not (any "{}\n"))) "}}"))
+     (1 'carve-include-face))
 
     ;; Escaped char: a backslash before an ASCII punctuation character.
     ;;
