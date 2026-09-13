@@ -190,6 +190,21 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   "Face for `@mentions'."
   :group 'carve)
 
+(defface carve-include-section-face
+  '((t :inherit font-lock-constant-face))
+  "Face for an include directive's `#section' selector."
+  :group 'carve)
+
+(defface carve-include-option-face
+  '((t :inherit font-lock-variable-name-face))
+  "Face for an include directive's option name."
+  :group 'carve)
+
+(defface carve-include-value-face
+  '((t :inherit font-lock-string-face))
+  "Face for an include directive's option value."
+  :group 'carve)
+
 (defface carve-include-face
   '((t :inherit font-lock-preprocessor-face))
   "Face for a reserved include directive, `{{ path }}'."
@@ -879,8 +894,36 @@ renders nothing came back bold."
     ;; so a directive inside `code' keeps the code face (font-lock does not
     ;; override a face already set), and BEFORE the mention and tag keywords, so
     ;; they find the run already claimed.
-    (,(rx (group "{{" (zero-or-more (not (any "{}\n"))) "}}"))
-     (1 'carve-include-face))
+    (,(rx (group "{{")
+          (group (one-or-more (any " \t")))
+          (group (or (seq ?\" (zero-or-more (not (any ?\" ?\n))) ?\")
+                     (seq (not (any "#@}" space ?\" ?\n))
+                          (zero-or-more (not (any "#@}" space ?\n))))))
+          (group (zero-or-more (not (any "}" ?\n))))
+          (group "}}"))
+     (1 'carve-markup-face)
+     (3 'carve-include-face)
+     (5 'carve-markup-face)
+     ;; The TAIL gets anchored matchers rather than more groups, because a
+     ;; directive carries any number of option slots and a group spells a fixed
+     ;; count.
+     ;;
+     ;; THE PRE-FORM REWINDS. font-lock leaves point at the end of the whole
+     ;; match, which is past the tail, so an anchored search from there finds
+     ;; nothing and the tag keyword downstream claimed `#section` again. It
+     ;; moves point back to the tail and returns the tail's end as the limit -
+     ;; not the end of the LINE, or a `#word' after the closing braces would be
+     ;; read as a selector.
+     ("\\(#[A-Za-z_][A-Za-z0-9_-]*\\)"
+      (progn (goto-char (match-beginning 4)) (match-end 4))
+      nil
+      (1 'carve-include-section-face))
+     ("\\(@[A-Za-z_][A-Za-z0-9_-]*\\)\\(:\\)\\([^ \t}\n]+\\)"
+      (progn (goto-char (match-beginning 4)) (match-end 4))
+      nil
+      (1 'carve-include-option-face)
+      (2 'carve-markup-face)
+      (3 'carve-include-value-face)))
 
     ;; Escaped char: a backslash before an ASCII punctuation character.
     ;;

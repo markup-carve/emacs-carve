@@ -285,27 +285,48 @@ marker - and a tab does not separate (markup-carve/carve#525)."
            (carve-test--face-at "![Apollo](apollo.jpg) cap\n" "apollo.jpg")
            'carve-url-face)))
 
-(ert-deftest carve-test-include-directive ()
-  "A `{{ path }}' directive is fontified as one reserved token."
+(ert-deftest carve-test-include-directive-path ()
+  "A `{{ path }}' directive fontifies its path as a path."
   (should (carve-test--face-includes
-           (carve-test--face-at "See {{ ch.crv }} here\n" "{{ ch.crv }}")
+           (carve-test--face-at "See {{ ch.crv }} here\n" "ch.crv")
            'carve-include-face)))
 
 (ert-deftest carve-test-include-directive-selector-is-not-a-tag ()
-  "A directive's `#section' keeps the directive face, not the tag face.
+  "A directive's `#section' is a selector, not a hashtag.
 
 The whole point of the rule: `#word' IS a tag everywhere else, so before the
 directive had a keyword of its own the selector inside a path was fontified as
-a hashtag."
+one."
   (let ((face (carve-test--face-at "See {{ ch.crv #intro }} here\n" "#intro")))
-    (should (carve-test--face-includes face 'carve-include-face))
+    (should (carve-test--face-includes face 'carve-include-section-face))
     (should-not (carve-test--face-includes face 'carve-tag-face))))
+
+(ert-deftest carve-test-include-directive-option-is-not-a-mention ()
+  "A directive's option name is a parameter, not a mention."
+  (let ((face (carve-test--face-at "See {{ ch.crv @shift:auto }} here\n" "@shift")))
+    (should (carve-test--face-includes face 'carve-include-option-face))
+    (should-not (carve-test--face-includes face 'carve-mention-face))))
+
+(ert-deftest carve-test-include-directive-option-value ()
+  "A directive's option value is fontified separately from its name."
+  (should (carve-test--face-includes
+           (carve-test--face-at "See {{ ch.crv @shift:auto }} here\n" "auto")
+           'carve-include-value-face)))
 
 (ert-deftest carve-test-include-directive-in-a-code-span-stays-code ()
   "A directive inside a code span keeps the code face."
   (should (carve-test--face-includes
            (carve-test--face-at "a `{{ ch.crv }}` b\n" "{{ ch.crv }}")
            'carve-code-face)))
+
+(ert-deftest carve-test-a-tag-after-a-directive-is-still-a-tag ()
+  "The selector rule is bounded by the directive, not by the line.
+
+An anchored matcher running to end of line would read a `#word' written AFTER
+the closing braces as a selector."
+  (should (carve-test--face-includes
+           (carve-test--face-at "{{ ch.crv }} then #topic\n" "#topic")
+           'carve-tag-face)))
 
 (ert-deftest carve-test-tag ()
   "A `#tag' at a word boundary is fontified as a tag."
