@@ -297,7 +297,7 @@ marker - and a tab does not separate (markup-carve/carve#525)."
 The whole point of the rule: `#word' IS a tag everywhere else, so before the
 directive had a keyword of its own the selector inside a path was fontified as
 one."
-  (let ((face (carve-test--face-at "See {{ ch.crv #intro }} here\n" "#intro")))
+  (let ((face (carve-test--face-at "See {{ ch.crv#intro }} here\n" "#intro")))
     (should (carve-test--face-includes face 'carve-include-section-face))
     (should-not (carve-test--face-includes face 'carve-tag-face))))
 
