@@ -57,6 +57,23 @@ enough."
     (search-forward search)
     (get-text-property (match-beginning 0) 'face)))
 
+(defun carve-test--text-with-face (text face)
+  "Open TEXT in a `carve-mode\=' buffer, fontify, and return the text carrying FACE.
+Every character whose `face\=' property is or contains FACE is concatenated, so
+a rule that scopes only PART of a construct reports the part rather than a
+bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-ensure)
+    (let ((out ""))
+      (dotimes (i (1- (point-max)))
+        (let* ((pos (1+ i))
+               (at (get-text-property pos 'face)))
+          (when (or (eq at face) (and (listp at) (memq face at)))
+            (setq out (concat out (buffer-substring-no-properties pos (1+ pos)))))))
+      out)))
+
 (defun carve-test--syntax-at (text search)
   "Open TEXT, fontify, and return the `syntax-table\=' property at SEARCH."
   (with-temp-buffer
@@ -312,6 +329,78 @@ one."
   (should (carve-test--face-includes
            (carve-test--face-at "See {{ ch.crv @shift:auto }} here\n" "auto")
            'carve-include-value-face)))
+
+(ert-deftest carve-test-include-directive-quoted-option-value ()
+  "A quoted option value is one value, spaces and all.
+
+An option value is an `attribute_value\=', which the grammar admits in a quoted
+form, so a rule reading it as a run of non-space characters scoped `\"two\=' and
+left `words\"\=' out of the option (markup-carve/emacs-carve#35)."
+  (should (equal "\"two words\""
+                 (carve-test--text-with-face
+                  "See {{ ch.crv @label:\"two words\" }} here\n"
+                  'carve-include-value-face)))
+  (should (equal "'two words'"
+                 (carve-test--text-with-face
+                  "See {{ ch.crv @label:'two words' }} here\n"
+                  'carve-include-value-face))))
+
+(ert-deftest carve-test-include-directive-quoted-value-holds-the-other-quote ()
+  "Each quote character admits the other one inside it."
+  (should (equal "\"it's here\""
+                 (carve-test--text-with-face
+                  "See {{ ch.crv @label:\"it's here\" }} here\n"
+                  'carve-include-value-face)))
+  (should (equal "'say \"hi\"'"
+                 (carve-test--text-with-face
+                  "See {{ ch.crv @label:'say \"hi\"' }} here\n"
+                  'carve-include-value-face))))
+
+(ert-deftest carve-test-include-directive-option-shape-inside-a-value ()
+  "A colon or an option-shaped token inside a quoted value belongs to the value.
+
+Admitting quoted values is what makes this reachable: before it, no value could
+contain a colon at all."
+  (let ((text "See {{ ch.crv @label:\"a @x:y b\" }} here\n"))
+    (should (equal "\"a @x:y b\""
+                   (carve-test--text-with-face text 'carve-include-value-face)))
+    (should (equal "@label"
+                   (carve-test--text-with-face text 'carve-include-option-face)))))
+
+(ert-deftest carve-test-include-directive-unterminated-quote-falls-back ()
+  "An unterminated quote reads as the unquoted run and still stops at the space.
+
+It must never pair with a quote further along and swallow what is between: the
+processor leaves a malformed directive as text, and this is what rules out the
+wider spelling that would otherwise pass every case above."
+  (should (equal "\"two"
+                 (carve-test--text-with-face
+                  "See {{ ch.crv @label:\"two words }} here\n"
+                  'carve-include-value-face))))
+
+(ert-deftest carve-test-include-directive-every-option-slot-is-scoped ()
+  "Both slots of a two-option directive are scoped.
+
+The value rule is an ANCHORED matcher, so it only runs at all when the pre-form
+rewinds point to the tail - and only reaches a second slot when it loops.  A
+matcher that never ran would leave both values bare and every assertion above
+would be checking nothing."
+  (let ((text "See {{ ch.crv @a:\"x y\" @b:\"p q\" }} here\n"))
+    (should (equal "\"x y\"\"p q\""
+                   (carve-test--text-with-face text 'carve-include-value-face)))
+    (should (equal "@a@b"
+                   (carve-test--text-with-face text 'carve-include-option-face)))))
+
+(ert-deftest carve-test-include-directive-a-quoted-path-stops-at-the-newline ()
+  "A quoted path does not pair with a quote on a later line.
+
+`quoted_include_path\=' is `character - (?\" | newline)\=', so an unterminated
+quote leaves the text alone rather than painting everything down to the next
+one as a directive."
+  (let ((text "See {{ \"a\nnot a directive *bold* here\nb\" }} end\n"))
+    (should (equal "" (carve-test--text-with-face text 'carve-include-face)))
+    (should (carve-test--face-includes
+             (carve-test--face-at text "bold") 'carve-bold-face))))
 
 (ert-deftest carve-test-include-directive-in-a-code-span-stays-code ()
   "A directive inside a code span keeps the code face."
