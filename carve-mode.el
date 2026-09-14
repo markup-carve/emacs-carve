@@ -919,7 +919,23 @@ renders nothing came back bold."
       (progn (goto-char (match-beginning 4)) (match-end 4))
       nil
       (1 'carve-include-section-face))
-     ("\\(@[A-Za-z_][A-Za-z0-9_-]*\\)\\(:\\)\\([^ \t}\n]+\\)"
+     ;; THE VALUE IS AN `attribute_value', so it may be quoted and a quoted one
+     ;; carries spaces.  Read as a run of non-space characters it scoped `"two'
+     ;; and left `words"' out of the option (markup-carve/emacs-carve#35,
+     ;; upstream carve-grammars#411).  Both quoted alternatives require their
+     ;; closing quote, so an UNTERMINATED one falls back to the unquoted
+     ;; reading and still stops at the space rather than pairing with a quote
+     ;; further along, and both exclude the newline as `quoted_value' does
+     ;; [CARVE-P4-006].  Spelled with `rx' because the path alternative in the
+     ;; keyword above is the same shape and the two have to stay readable
+     ;; against each other.
+     (,(rx (group "@" (any "A-Za-z_") (zero-or-more (any "A-Za-z0-9_-")))
+           (group ":")
+           (group (or (seq ?\" (zero-or-more (or (seq ?\\ not-newline)
+                                                 (not (any ?\" ?\\ ?\n)))) ?\")
+                      (seq ?' (zero-or-more (or (seq ?\\ not-newline)
+                                                (not (any ?' ?\\ ?\n)))) ?')
+                      (one-or-more (not (any " \t}" ?\n))))))
       (progn (goto-char (match-beginning 4)) (match-end 4))
       nil
       (1 'carve-include-option-face)
