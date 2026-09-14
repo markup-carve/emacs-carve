@@ -896,10 +896,11 @@ renders nothing came back bold."
     ;; they find the run already claimed.
     (,(rx (group "{{")
           (group (one-or-more (any " \t")))
-          (group (or (seq ?\" (zero-or-more (not (any ?\" ?\n))) ?\")
+          (group (or (seq ?\" (zero-or-more (or (seq ?\\ not-newline)
+                                                  (not (any ?\" ?\\ ?\n)))) ?\")
                      (seq (not (any "#@}" space ?\" ?\n))
                           (zero-or-more (not (any "#@}" space ?\n))))))
-          (group (zero-or-more (not (any "}" ?\n))))
+          (group (one-or-more (not (any "}" ?\n))))
           (group "}}"))
      (1 'carve-markup-face)
      (3 'carve-include-face)
