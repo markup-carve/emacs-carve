@@ -432,6 +432,94 @@ run at once, and an Emacs regexp has no lookaround to spell it with."
           (throw 'done t))))
     nil))
 
+(defun carve--include-skip-quoted-run (bound)
+  "Move past the quoted run point is on, and return non-nil, or return nil.
+BOUND is the last position the run may reach.  A backslash escapes the
+next character and the run never crosses a line break, so an UNTERMINATED
+quote skips nothing and leaves point where it was - which is what keeps
+the closer of a malformed directive at the first `}}'."
+  (let ((quote (char-after)))
+    (when (memq quote '(?\" ?\'))
+      (let ((pos (1+ (point)))
+            (close nil))
+        (while (and (not close) (< pos bound))
+          (let ((c (char-after pos)))
+            (cond ((eq c ?\n) (setq pos bound))
+                  ((eq c ?\\) (setq pos (+ pos 2)))
+                  ((eq c quote) (setq close (1+ pos)))
+                  (t (setq pos (1+ pos))))))
+        (when close
+          (goto-char close)
+          t)))))
+
+(defun carve--fontify-include (limit)
+  "Search for a reserved include directive between point and LIMIT.
+Group 1 is `{{', 2 the pad, 3 the path, 4 the tail the anchored matchers
+below search, and 5 the closing `}}'.
+
+THE CLOSER IS THE FIRST `}}' OUTSIDE A QUOTED RUN, and a quoted run may
+contain the pair (markup-carve/carve#2013).  This replaces a regexp whose
+tail was `(one-or-more (not (any \"}\" ?\\n)))': it could not span a `}' at
+all, so the directive ended at the first pair after the path and the
+option value's own rx, which does admit the pair, never got the chance -
+it is anchored INSIDE the tail those bounds produced.
+
+WHY A FUNCTION AND NOT A WIDER REGEXP.  Saying it in one Emacs regexp
+needs a quoted run and a bare quote as alternatives of the same repeated
+group, and Emacs has no lookahead, no atomic group and no possessive
+quantifier to decide between them.  A quote would then be both an opener
+and an ordinary character at every position, and a directive with no
+closer on the line makes the engine try both - the exponential shape the
+ruling warns about.  A left-to-right scan decides at the quote, once, and
+never revisits it, which is also how the code-span matcher above earns
+its place."
+  (catch 'done
+    (while (search-forward "{{" limit t)
+      (let* ((open-beg (- (point) 2))
+             (open-end (point))
+             (bound (min limit (line-end-position)))
+             (pad-end (progn (skip-chars-forward " \t" bound) (point)))
+             (path-beg (point))
+             (path-end nil))
+        (when (> pad-end open-end)
+          (if (eq (char-after) ?\")
+              (when (carve--include-skip-quoted-run bound)
+                (setq path-end (point)))
+            (let ((c (char-after)))
+              (when (and c (not (memq c '(?# ?@ ?} ?\" ?\s ?\t ?\n))))
+                (forward-char 1)
+                (skip-chars-forward "^#@} \t\n" bound)
+                (setq path-end (point))))))
+        (if (not path-end)
+            (goto-char open-end)
+          (let ((tail-beg (point))
+                (close nil)
+                (stop nil))
+            (while (and (not close) (not stop) (< (point) bound))
+              (cond
+               ((eq (char-after) ?\})
+                ;; A `}' outside a quoted run ends the tail: either it opens
+                ;; the closer, or this candidate is not a directive at all -
+                ;; the bound the regexp had, kept deliberately.
+                (if (and (eq (char-after (1+ (point))) ?\})
+                         (> (point) tail-beg))
+                    (setq close (point))
+                  (setq stop t)))
+               ((carve--include-skip-quoted-run bound))
+               (t (forward-char 1))))
+            (if (not close)
+                (goto-char open-end)
+              (let ((end (+ close 2)))
+                (goto-char end)
+                (set-match-data (list open-beg end
+                                      open-beg open-end
+                                      open-end pad-end
+                                      path-beg path-end
+                                      tail-beg close
+                                      close end))
+                (throw 'done t)))))))
+    nil))
+
 (defun carve--fontify-code-span (limit)
   "Search for a verbatim backtick run between point and LIMIT.
 Group 1 is the whole span, its delimiter runs included.
@@ -894,14 +982,7 @@ renders nothing came back bold."
     ;; so a directive inside `code' keeps the code face (font-lock does not
     ;; override a face already set), and BEFORE the mention and tag keywords, so
     ;; they find the run already claimed.
-    (,(rx (group "{{")
-          (group (one-or-more (any " \t")))
-          (group (or (seq ?\" (zero-or-more (or (seq ?\\ not-newline)
-                                                  (not (any ?\" ?\\ ?\n)))) ?\")
-                     (seq (not (any "#@}" space ?\" ?\n))
-                          (zero-or-more (not (any "#@}" space ?\n))))))
-          (group (one-or-more (not (any "}" ?\n))))
-          (group "}}"))
+    (carve--fontify-include
      (1 'carve-markup-face)
      (3 'carve-include-face)
      (5 'carve-markup-face)
