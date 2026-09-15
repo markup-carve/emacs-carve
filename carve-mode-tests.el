@@ -378,6 +378,62 @@ wider spelling that would otherwise pass every case above."
                   "See {{ ch.crv @label:\"two words }} here\n"
                   'carve-include-value-face))))
 
+(ert-deftest carve-test-include-directive-quoted-value-holds-the-pair ()
+  "A quoted value may contain the `}}' pair, and the closer is the pair AFTER it.
+
+markup-carve/carve#2013.  The tail of the old regexp was a run of characters
+that could not span a `}' at all, so the directive ended at the pair INSIDE the
+value and `b\" }} end' fell out of it as prose."
+  (let ((text "See {{ ch.crv @label:\"a }} b\" }} end\n"))
+    (should (equal "\"a }} b\""
+                   (carve-test--text-with-face text 'carve-include-value-face)))
+    ;; The closer is the second pair: the first one carries the VALUE face, so
+    ;; only one pair is left for the delimiter.
+    (should (equal "{{:}}"
+                   (carve-test--text-with-face text 'carve-markup-face)))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at text "end") 'carve-include-value-face))))
+
+(ert-deftest carve-test-include-directive-quoted-path-holds-the-pair ()
+  "A quoted PATH may contain the pair too, and what follows stays in the directive.
+
+The path half fails the same way and costs more when it does: the directive
+ending mid-string hands the option name back to the mention rule, which is the
+shredding this keyword exists to prevent."
+  (let ((text "See {{ \"a }} b.crv\" @k:v }} end\n"))
+    (should (equal "\"a }} b.crv\""
+                   (carve-test--text-with-face text 'carve-include-face)))
+    (let ((face (carve-test--face-at text "@k")))
+      (should (carve-test--face-includes face 'carve-include-option-face))
+      (should-not (carve-test--face-includes face 'carve-mention-face)))))
+
+(ert-deftest carve-test-include-directive-unterminated-quote-closes-at-the-first-pair ()
+  "An unterminated quote opens no run, so the closer is again the FIRST pair.
+
+This is the half the old bound got right, and the half a wider tail would lose:
+a tail that swallowed the rest of the line would find no closer at all and the
+option name would fall back to the mention rule."
+  (let ((text "See {{ ch.crv @label:\"two words }} then #topic\n"))
+    (should (equal "\"two"
+                   (carve-test--text-with-face text 'carve-include-value-face)))
+    (should (carve-test--face-includes
+             (carve-test--face-at text "#topic") 'carve-tag-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at text "@label") 'carve-include-option-face))))
+
+(ert-deftest carve-test-include-directive-anchored-matchers-run-over-a-widened-tail ()
+  "Both option slots are still scoped when the first value holds the pair.
+
+The option matchers are ANCHORED into group 4, so they only run at all when the
+pre-form rewinds point into the tail the matcher reports - and they only reach
+the second slot when that tail reaches past the pair inside the first.  Without
+this, every assertion above could pass on a tail that stopped one slot short."
+  (let ((text "See {{ ch.crv @a:\"x }} y\" @b:\"p q\" }} here\n"))
+    (should (equal "\"x }} y\"\"p q\""
+                   (carve-test--text-with-face text 'carve-include-value-face)))
+    (should (equal "@a@b"
+                   (carve-test--text-with-face text 'carve-include-option-face)))))
+
 (ert-deftest carve-test-include-directive-every-option-slot-is-scoped ()
   "Both slots of a two-option directive are scoped.
 
