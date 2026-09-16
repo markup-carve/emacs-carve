@@ -166,6 +166,11 @@ of edge cases (intraword literals, unmatched openers spanning lines) may be
 highlighted slightly more or less eagerly than the renderer would parse them.
 The fontification is a reading aid, not a parser.
 
+A bare delimiter never pairs across an inline link, an image or an autolink
+(PART 9 §9 E2a), so `/see [x](http://a.b/c/) now/` is one italic run. That
+holds at any parenthesis depth in the destination. A run around any other
+painted construct, such as a code span, is still not highlighted.
+
 Block openers accept a leading indent, because a block opens at its container's
 content column and that column is zero only at the top level. A per-line rule
 cannot tell a container's indent from a stray one, so an indented opener at the

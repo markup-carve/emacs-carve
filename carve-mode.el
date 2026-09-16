@@ -590,6 +590,208 @@ renders nothing came back bold."
   "Search for a `{# ... #}\\=' editorial comment between point and LIMIT."
   (carve--fontify-delimited-run "{#" "#}" 1 limit))
 
+;; A bare delimiter never pairs across a link destination or an autolink
+;; (PART 9 S9 E2a), so the bare emphasis rules step over both whole.
+
+(defun carve--link-tail-end (pos limit)
+  "Return the end of a `(dest)\\=' or `(dest \"title\")\\=' tail at POS, or nil.
+Parentheses balance to any depth; `\\\\(\\=', `\\\\)\\=' and `\\\\\\\\\\=' are the only
+destination escapes, and a title is one space away."
+  (save-excursion
+    (goto-char pos)
+    (when (eq (char-after) ?\()
+      (forward-char 1)
+      (let ((depth 0))
+        (while (and (< (point) limit)
+                    (let ((c (char-after)))
+                      (cond
+                       ((and (eq c ?\\)
+                             (memq (char-after (1+ (point))) '(?\( ?\) ?\\)))
+                        (forward-char 2) t)
+                       ((eq c ?\() (setq depth (1+ depth)) (forward-char 1) t)
+                       ((and (eq c ?\)) (> depth 0))
+                        (setq depth (1- depth)) (forward-char 1) t)
+                       ((memq c '(?\) ?\s ?\t ?\n)) nil)
+                       (t (forward-char 1) t)))))
+        (when (and (= depth 0) (< (point) limit))
+          (when (and (eq (char-after) ?\s)
+                     (memq (char-after (1+ (point))) '(?\" ?')))
+            (let ((q (char-after (1+ (point)))))
+              (forward-char 2)
+              (while (and (< (point) limit)
+                          (not (memq (char-after) (list q ?\n))))
+                (forward-char (if (and (eq (char-after) ?\\)
+                                       (eq (char-after (1+ (point))) q))
+                                  2 1)))
+              (when (eq (char-after) q) (forward-char 1))))
+          (and (< (point) limit) (eq (char-after) ?\))
+               (1+ (point))))))))
+
+(defun carve--link-end (pos limit)
+  "Return the end of an inline link or image starting at POS, or nil."
+  (save-excursion
+    (goto-char pos)
+    (when (eq (char-after) ?!) (forward-char 1))
+    (when (and (eq (char-after) ?\[)
+               (save-excursion (search-forward "](" limit t)))
+      (forward-char 1)
+      (let ((depth 0) close)
+        (while (and (not close) (< (point) limit))
+          (let ((c (char-after)))
+            (cond
+             ((eq c ?\\) (forward-char (min 2 (- limit (point)))))
+             ((eq c ?`)
+              (let* ((beg (point))
+                     (len (progn (skip-chars-forward "`" limit) (- (point) beg)))
+                     (end (carve--closing-backtick-run (point) limit len)))
+                (goto-char (if end (+ end len) limit))))
+             ((eq c ?\[) (setq depth (1+ depth)) (forward-char 1))
+             ((eq c ?\])
+              (if (= depth 0) (setq close (point))
+                (setq depth (1- depth)) (forward-char 1)))
+             (t (forward-char 1)))))
+        (and close (carve--link-tail-end (1+ close) limit))))))
+
+(defun carve--url-char-p (c)
+  "Non-nil when C may appear in an autolink URL."
+  (and c
+       (if (< c 128)
+           (or (<= ?a c ?z) (<= ?A c ?Z) (<= ?0 c ?9)
+               (memq c (string-to-list "-._~:/?#[]@!$&'()*+,;=%")))
+         (not (or (<= #x80 c #x9f) (eq c #x85)
+                  (memq (get-char-code-property c 'general-category)
+                        '(Zs Zl Zp Cf)))))))
+
+(defun carve--autolink-end (pos limit)
+  "Return the end of a URL or email autolink starting at POS, or nil."
+  (save-excursion
+    (goto-char pos)
+    (cond
+     ((looking-at (rx "<" (any "a-zA-Z") (zero-or-more (any "a-zA-Z0-9+.-")) ":"))
+      (goto-char (match-end 0))
+      (let ((beg (point)))
+        (while (and (< (point) limit) (carve--url-char-p (char-after))
+                    (not (eq (char-after) ?>)))
+          (forward-char 1))
+        (and (> (point) beg) (< (point) limit) (eq (char-after) ?>)
+             (1+ (point)))))
+     ((looking-at (rx "<" (one-or-more (any alpha digit "._+-")) "@"
+                      (one-or-more (one-or-more (any alpha digit "_-")) ".")
+                      (one-or-more alpha) ">"))
+      (and (<= (match-end 0) limit) (match-end 0))))))
+
+(defun carve--opaque-end (pos limit)
+  "Return the end of a link, image or autolink starting at POS, or nil."
+  (pcase (char-after pos)
+    ((or ?\[ ?!) (carve--link-end pos limit))
+    (?< (carve--autolink-end pos limit))))
+
+(defun carve--prefix-at-p (string pos end)
+  "Non-nil when STRING starts at POS and ends by END."
+  (and (<= (+ pos (length string)) end)
+       (string= string (buffer-substring-no-properties pos (+ pos (length string))))))
+
+(defvar-local carve--opaque-spans-cache nil
+  "The last line's opaque spans, keyed on its bounds and the buffer tick.")
+
+(defun carve--opaque-spans (bol eol)
+  "Return a table from START to END of each opaque construct in BOL..EOL."
+  (let ((key (list bol eol (buffer-chars-modified-tick))))
+    (if (equal key (car carve--opaque-spans-cache))
+        (cdr carve--opaque-spans-cache)
+      (let ((pos bol) (spans (make-hash-table)))
+        (while (< pos eol)
+          (let ((end (carve--opaque-end pos eol)))
+            (if end
+                (progn (puthash pos end spans) (setq pos end))
+              (setq pos (1+ pos)))))
+        (setq carve--opaque-spans-cache (cons key spans))
+        spans))))
+
+(defun carve--bare-run-on-line (open close from bol eol)
+  "Return (BEG END JUMPS) for the first OPEN ... CLOSE run at FROM or later.
+BOL and EOL bound the line; JUMPS lists the stepped-over constructs."
+  (let ((spans (carve--opaque-spans bol eol))
+        (pos from)
+        found)
+    (while (and (not found) (< pos eol))
+      (let ((skip (gethash pos spans)))
+        (cond
+         (skip (setq pos skip))
+         ((and (carve--prefix-at-p open pos eol)
+               (or (= pos bol) (memq (char-before pos) '(?\s ?\t ?\( ?\[ ?{))))
+          (let* ((body (+ pos (length open)))
+                 (end body)
+                 (dirty (text-property-not-all pos body 'face nil))
+                 jumps)
+            (while (and (< end eol) (not (carve--prefix-at-p close end eol)))
+              (let ((over (gethash end spans)))
+                (cond
+                 (over (push (cons end over) jumps) (setq end over))
+                 (t (when (get-text-property end 'face) (setq dirty t))
+                    (setq end (1+ end))))))
+            (cond
+             ((or (= end body) (>= end eol)) (setq pos (1+ pos)))
+             (t
+              (setq end (+ end (length close)))
+              (when (text-property-not-all (- end (length close)) end 'face nil)
+                (setq dirty t))
+              (if dirty
+                  (setq pos end)
+                (setq found (list pos end jumps)))))))
+         (t (setq pos (1+ pos))))))
+    found))
+
+(defun carve--fontify-bare-run (open close face limit)
+  "Search for a bare OPEN ... CLOSE emphasis run between point and LIMIT.
+Group 1 is the run.  Links, images and autolinks are stepped over whole, so
+no opener starts inside one and no closer ends inside one.  A run over a
+character an earlier rule painted is refused, except inside a stepped-over
+construct, which keeps its own face with FACE prepended."
+  (let (found)
+    (while (and (not found) (< (point) limit))
+      (setq found (carve--bare-run-on-line open close (point)
+                                           (line-beginning-position)
+                                           (line-end-position)))
+      (unless found
+        (goto-char (min limit (1+ (line-end-position))))))
+    (when found
+      (pcase-let ((`(,beg ,end ,jumps) found))
+        (dolist (jump jumps)
+          (let ((p (car jump)))
+            (while (< p (cdr jump))
+              (let ((next (next-single-property-change p 'face nil (cdr jump))))
+                (when (get-text-property p 'face)
+                  (font-lock-prepend-text-property p next 'face face))
+                (setq p next)))))
+        (set-match-data (list beg end beg end))
+        (goto-char end)
+        t))))
+
+(defun carve--fontify-bold-italic-run (limit)
+  "Search for a bare bold-italic run between point and LIMIT."
+  (carve--fontify-bare-run "/*" "*/" 'carve-bold-italic-face limit))
+
+(defun carve--fontify-bold-run (limit)
+  "Search for a bare bold run between point and LIMIT."
+  (carve--fontify-bare-run "*" "*" 'carve-bold-face limit))
+
+(defun carve--fontify-italic-run (limit)
+  "Search for a bare italic run between point and LIMIT."
+  (carve--fontify-bare-run "/" "/" 'carve-italic-face limit))
+
+(defun carve--fontify-underline-run (limit)
+  "Search for a bare underline run between point and LIMIT."
+  (carve--fontify-bare-run "_" "_" 'carve-underline-face limit))
+
+(defun carve--fontify-strike-run (limit)
+  "Search for a bare strike run between point and LIMIT."
+  (carve--fontify-bare-run "~" "~" 'carve-strike-face limit))
+
+(defun carve--fontify-highlight-run (limit)
+  "Search for a bare highlight run between point and LIMIT."
+  (carve--fontify-bare-run "=" "=" 'carve-highlight-face limit))
+
 ;;;; Font-lock keywords
 
 (defconst carve-font-lock-keywords
@@ -1180,21 +1382,20 @@ renders nothing came back bold."
     ;; to the outer `/' and the inner `*' is part of a two-character token.  It
     ;; has to precede the bare italic rule below, which matched `/*both*/' as a
     ;; plain italic - a run painted as one mark when the renderer gives it two.
-    (,(rx (or bol space (any "([{"))
-          (group "/*" (minimal-match (one-or-more (not (any "\n")))) "*/"))
-     (1 'carve-bold-italic-face))
+    (carve--fontify-bold-italic-run
+     (1 'carve-bold-italic-face keep))
 
     ;; Bare emphasis delimiters (word-boundary approximation).
-    (,(rx (or bol space (any "([{")) (group "*" (minimal-match (one-or-more (not (any "*\n")))) "*"))
-     (1 'carve-bold-face))
-    (,(rx (or bol space (any "([{")) (group "/" (minimal-match (one-or-more (not (any "/\n")))) "/"))
-     (1 'carve-italic-face))
-    (,(rx (or bol space (any "([{")) (group "_" (minimal-match (one-or-more (not (any "_\n")))) "_"))
-     (1 'carve-underline-face))
-    (,(rx (or bol space (any "([{")) (group "~" (minimal-match (one-or-more (not (any "~\n")))) "~"))
-     (1 'carve-strike-face))
-    (,(rx (or bol space (any "([{")) (group "=" (minimal-match (one-or-more (not (any "=\n")))) "="))
-     (1 'carve-highlight-face))
+    (carve--fontify-bold-run
+     (1 'carve-bold-face keep))
+    (carve--fontify-italic-run
+     (1 'carve-italic-face keep))
+    (carve--fontify-underline-run
+     (1 'carve-underline-face keep))
+    (carve--fontify-strike-run
+     (1 'carve-strike-face keep))
+    (carve--fontify-highlight-run
+     (1 'carve-highlight-face keep))
 
     ;; Citation groups: [+@key, loc; @key2] — highlight @key and the +/- markers.
     ;; A citation bracket has no (url)/[ref]/{attr} tail.
