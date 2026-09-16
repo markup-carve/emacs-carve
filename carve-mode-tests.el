@@ -1423,3 +1423,66 @@ and a chunk starting inside a run has no opener to find."
   (should (carve-test--face-includes
            (carve-test--face-after-partial-fontify "```\na\n```\nb *c* d\n" "b *c*" "*c*")
            'carve-bold-face)))
+
+(defconst carve-test--destination-runs
+  '(("/" . carve-italic-face) ("*" . carve-bold-face)
+    ("_" . carve-underline-face) ("~" . carve-strike-face)
+    ("=" . carve-highlight-face))
+  "Each bare delimiter and the face of its run.")
+
+(defun carve-test--destinations (d)
+  "Link destinations and autolinks holding the delimiter D."
+  (list (concat "[x](http://a.b/c" d ")")
+        (concat "[x](http://a" d "b/c)")
+        (concat "<http://a.b/c" d ">")
+        (concat "<http://a" d "b>")
+        (concat "![x](a.png \"t" d "u\")")
+        (concat "![x](a.png 't" d "u')")
+        (concat "![x](a.png \"t" d "\")")
+        (concat "![x](a.png 't" d "')")
+        (concat "[x](foo(bar)" d "baz)")
+        (concat "[x](foo\\)x" d "y)")
+        (concat "[x](foo(bar(\\x))" d "y)")
+        (concat "[x](a(b(c(d)))" d "e)")
+        (concat "<" (make-string 40 ?a) ":x" d "y>")))
+
+(ert-deftest carve-test-a-delimiter-in-a-destination-closes-nothing ()
+  "A bare delimiter never pairs across a link destination or an autolink.
+PART 9 S9 E2a: `/see [x](http://a.b/c/) now/' is one italic run."
+  (dolist (run carve-test--destination-runs)
+    (dolist (dest (carve-test--destinations (car run)))
+      (let ((text (concat (car run) "see " dest " now" (car run) "\n")))
+        (ert-info (text :prefix "Input: ")
+          (should (carve-test--face-includes
+                   (carve-test--face-at text "see") (cdr run)))
+          (should (carve-test--face-includes
+                   (carve-test--face-at text " now") (cdr run)))))))
+  (should (carve-test--face-includes
+           (carve-test--face-at "/see [x](http://a.b/c/) now/\n" "http")
+           'carve-italic-face))
+  (let ((text "/*see [x](a*/b) now*/\n"))
+    (ert-info (text :prefix "Input: ")
+      (should (carve-test--face-includes
+               (carve-test--face-at text " now") 'carve-bold-italic-face)))))
+
+(ert-deftest carve-test-a-delimiter-in-a-destination-opens-nothing ()
+  "An opener inside a destination or an autolink pairs with nothing after it."
+  (dolist (case '(("[x](/b) c/\n" . " c/")
+                  ("x <foo:(/y)> z/\n" . " z/")
+                  ("![x](a \"t /u\") c/\n" . " c/")))
+    (ert-info ((car case) :prefix "Input: ")
+      (should-not (carve-test--face-includes
+                   (carve-test--face-at (car case) (cdr case))
+                   'carve-italic-face)))))
+
+(ert-deftest carve-test-an-email-autolink-is-opaque ()
+  "An underscore inside an email autolink closes nothing."
+  (should (carve-test--face-includes
+           (carve-test--face-at "_see <a_b@c_d.de> now_\n" " now")
+           'carve-underline-face)))
+
+(ert-deftest carve-test-a-malformed-email-autolink-is-not-opaque ()
+  "`<x@a.b/>' is not an email autolink, so its `/' closes the run."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "/see <x@a.b/> now/\n" " now")
+               'carve-italic-face)))
