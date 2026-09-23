@@ -14,6 +14,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'carve-mode)
 
 (defun carve-test--face-at (text search)
@@ -1552,3 +1553,147 @@ PART 9 S9 E2a: `/see [x](http://a.b/c/) now/' is one italic run."
       (carve-mode)
       (font-lock-ensure)
       (should (equal (mapcar #'car (carve--imenu-create-index)) '("outside"))))))
+
+(ert-deftest carve-test-import-target-is-a-sibling-crv ()
+  (should (equal (carve--import-target "/tmp/notes/readme.md")
+                 "/tmp/notes/readme.crv"))
+  (should (equal (carve--import-target "/tmp/page.v2.html") "/tmp/page.v2.crv")))
+
+(ert-deftest carve-test-import-format-follows-the-extension ()
+  (should (equal (carve--import-format "a.md") "markdown"))
+  (should (equal (carve--import-format "a.HTM") "html"))
+  (should (equal (carve--import-format "a.djot") "djot"))
+  (should (equal (carve--import-format "a.bbcode") "bbcode"))
+  (should-not (carve--import-format "a.txt"))
+  (should-not (carve--import-format "Makefile")))
+
+(defun carve-test--with-stub-cli (script body)
+  "Run BODY with `carve-command' bound to a shell stub running SCRIPT.
+BODY is called with a fresh temporary directory."
+  (let* ((dir (file-name-as-directory (make-temp-file "carve-import" t)))
+         (stub (expand-file-name "carve-stub" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file stub (insert "#!/bin/sh\n" script "\n"))
+          (set-file-modes stub #o755)
+          (let ((carve-command stub))
+            (funcall body dir)))
+      (dolist (buf (buffer-list))
+        (let ((f (buffer-file-name buf)))
+          (when (and f (string-prefix-p dir f))
+            (kill-buffer buf))))
+      (delete-directory dir t))))
+
+(ert-deftest carve-test-import-writes-and-visits-the-sibling ()
+  (carve-test--with-stub-cli
+   "echo \"$1 $2 $3\"; echo '*bold*'"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir)))
+       (write-region "**bold**\n" nil src)
+       (should (equal (carve-import-file src) (concat dir "doc.crv")))
+       (should (equal (buffer-file-name) (concat dir "doc.crv")))
+       (should (equal (buffer-string) "migrate --from markdown\n*bold*\n"))))))
+
+(ert-deftest carve-test-import-declined-overwrite-keeps-the-target ()
+  (carve-test--with-stub-cli
+   "echo new"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir))
+           (target (expand-file-name "doc.crv" dir)))
+       (write-region "x\n" nil src)
+       (write-region "old\n" nil target)
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+         (should-error (carve-import-file src) :type 'user-error))
+       (should (equal (with-temp-buffer
+                        (insert-file-contents target)
+                        (buffer-string))
+                      "old\n"))))))
+
+(ert-deftest carve-test-import-reports-cli-errors ()
+  (carve-test--with-stub-cli
+   "echo 'carve migrate: cannot read' >&2; exit 2"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.html" dir)))
+       (write-region "<p>x</p>\n" nil src)
+       (should-error (carve-import-file src) :type 'user-error)
+       (should-not (file-exists-p (expand-file-name "doc.crv" dir)))
+       (should (string-match-p "cannot read"
+                               (with-current-buffer "*Carve Import*"
+                                 (buffer-string))))))))
+
+(ert-deftest carve-test-import-empty-output-is-an-error ()
+  "A CLI that exits 0 with no output (carve-js 0.1.7's bin) writes nothing."
+  (carve-test--with-stub-cli
+   "exit 0"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir)))
+       (write-region "# x\n" nil src)
+       (should-error (carve-import-file src) :type 'user-error)
+       (should-not (file-exists-p (expand-file-name "doc.crv" dir)))))))
+
+(ert-deftest carve-test-import-missing-cli-writes-nothing ()
+  (let* ((dir (file-name-as-directory (make-temp-file "carve-import" t)))
+         (src (expand-file-name "doc.md" dir))
+         (carve-command (expand-file-name "no-such-carve" dir)))
+    (unwind-protect
+        (progn
+          (write-region "# x\n" nil src)
+          (let ((err (should-error (carve-import-file src) :type 'user-error)))
+            (should (string-match-p "not found" (cadr err))))
+          (should-not (file-exists-p (expand-file-name "doc.crv" dir))))
+      (delete-directory dir t))))
+
+(ert-deftest carve-test-import-is-utf-8-whatever-the-locale ()
+  "Output is decoded and written as UTF-8 even under a Latin-1 setup."
+  (carve-test--with-stub-cli
+   "printf 'caf\\303\\251 \\342\\206\\222\\n'"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir))
+           (target (expand-file-name "doc.crv" dir))
+           (default-process-coding-system '(latin-1 . latin-1)))
+       (write-region "x\n" nil src)
+       (carve-import-file src)
+       (should (equal (buffer-string) "café →\n"))
+       (should (equal (with-temp-buffer
+                        (set-buffer-multibyte nil)
+                        (insert-file-contents-literally target)
+                        (buffer-string))
+                      (encode-coding-string "café →\n" 'utf-8)))))))
+
+(ert-deftest carve-test-import-passes-a-spaced-file-name-as-one-argument ()
+  (carve-test--with-stub-cli
+   "printf '%s\\n' \"$4\""
+   (lambda (dir)
+     (let ((src (expand-file-name "my notes.md" dir)))
+       (write-region "x\n" nil src)
+       (should (equal (carve-import-file src) (concat dir "my notes.crv")))
+       (should (equal (buffer-string) (concat src "\n")))))))
+
+(ert-deftest carve-test-import-leaves-no-temporary-files ()
+  (carve-test--with-stub-cli
+   "echo new"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir))
+           (tmp (file-name-as-directory (expand-file-name "tmp" dir))))
+       (make-directory tmp)
+       (write-region "x\n" nil src)
+       (write-region "old\n" nil (expand-file-name "doc.crv" dir))
+       (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+         (let ((temporary-file-directory tmp))
+           (should-error (carve-import-file src) :type 'user-error)))
+       (should-not (directory-files tmp nil "\\`[^.]"))))))
+
+(ert-deftest carve-test-import-asks-before-discarding-unsaved-target-edits ()
+  (carve-test--with-stub-cli
+   "echo new"
+   (lambda (dir)
+     (let ((src (expand-file-name "doc.md" dir))
+           (asked nil))
+       (write-region "x\n" nil src)
+       (with-current-buffer (find-file-noselect (expand-file-name "doc.crv" dir))
+         (insert "unsaved\n")
+         (cl-letf (((symbol-function 'y-or-n-p)
+                    (lambda (_) (setq asked t) nil)))
+           (should-error (carve-import-file src) :type 'user-error))
+         (should asked)
+         (should (equal (buffer-string) "unsaved\n")))))))
