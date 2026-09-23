@@ -2170,37 +2170,49 @@ and a prefix argument prompts for FORMAT.  CLI errors are shown in the
          (format (or format (carve--import-format file)
                      (user-error "Unknown source format for %s" file)))
          (target (carve--import-target file))
-         (errbuf (get-buffer-create "*Carve Import*"))
-         (errfile (make-temp-file "carve-import")))
+         (target-buf (get-file-buffer target)))
     (unless (carve--available-p)
       (user-error "The `%s' command was not found on PATH; cannot import"
                   carve-command))
     (when (string= file target)
       (user-error "%s is already a Carve file" file))
-    (when (and (file-exists-p target)
+    (when (and (or (file-exists-p target)
+                   (and target-buf (buffer-modified-p target-buf)))
                (not (y-or-n-p (format "%s exists; overwrite? " target))))
       (user-error "Import canceled"))
-    (unwind-protect
-        (with-temp-buffer
-          (let ((status (call-process carve-command nil
-                                      (list (current-buffer) errfile) nil
-                                      "migrate" "--from" format file)))
-            (if (eq status 0)
-                (write-region nil nil target nil 'silent)
-              (let ((stdout (buffer-string)))
-                (with-current-buffer errbuf
-                  (let ((inhibit-read-only t))
-                    (erase-buffer)
-                    (insert-file-contents errfile)
-                    (goto-char (point-max))
-                    (insert stdout))))
-              (display-buffer errbuf)
-              (user-error "carve migrate failed (exit %s); see *Carve Import*"
-                          status))))
-      (delete-file errfile))
-    (let ((buf (get-file-buffer target)))
-      (when buf
-        (with-current-buffer buf (revert-buffer t t t))))
+    (let ((errfile (make-temp-file "carve-import"))
+          (coding-system-for-read 'utf-8)
+          (coding-system-for-write 'utf-8-unix))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((status (call-process carve-command nil
+                                        (list (current-buffer) errfile) nil
+                                        "migrate" "--from" format
+                                        ;; Unibyte, so the UTF-8 binding
+                                        ;; above does not re-encode it.
+                                        (encode-coding-string
+                                         file
+                                         (or file-name-coding-system
+                                             default-file-name-coding-system)))))
+              (if (and (eq status 0) (> (buffer-size) 0))
+                  (write-region nil nil target nil 'silent)
+                (let ((stdout (buffer-string)))
+                  (with-current-buffer (get-buffer-create "*Carve Import*")
+                    (let ((inhibit-read-only t))
+                      (erase-buffer)
+                      (insert-file-contents errfile)
+                      (goto-char (point-max))
+                      (insert stdout)
+                      (display-buffer (current-buffer)))))
+                (if (eq status 0)
+                    ;; carve-js 0.1.7's npm bin exits 0 without running.
+                    (user-error "`%s migrate' printed nothing; is it the Carve CLI?"
+                                carve-command)
+                  (user-error "carve migrate failed (exit %s); see *Carve Import*"
+                              status)))))
+        (delete-file errfile)))
+    (when target-buf
+      (with-current-buffer target-buf (revert-buffer t t t)))
     (find-file target)
     target))
 

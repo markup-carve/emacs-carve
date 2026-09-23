@@ -104,8 +104,10 @@ writes the result next to it with a `.crv` extension (`notes.md` becomes
   `carve-import-formats`); otherwise it asks for a file.
 - With a prefix argument (`C-u M-x carve-import-file`) it also asks for the
   source format.
-- If the `.crv` file already exists, it asks before overwriting it.
-- When the CLI fails, its output goes to the `*Carve Import*` buffer.
+- If the `.crv` file already exists, or is open with unsaved changes, it asks
+  before overwriting it.
+- When the CLI fails or prints nothing, no file is written and its output
+  goes to the `*Carve Import*` buffer. The result is always written as UTF-8.
 
 It runs the same `carve-command` as the preview commands. The command is
 autoloaded, so it works from a Markdown buffer before `carve-mode` has loaded.
