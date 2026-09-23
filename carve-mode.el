@@ -2122,6 +2122,88 @@ installed, signal a user error instead of failing obscurely."
   (interactive)
   (carve-compile-region (point-min) (point-max)))
 
+;;;; Import from other markup formats
+
+(defcustom carve-import-formats
+  '(("md" . "markdown") ("markdown" . "markdown") ("mdown" . "markdown")
+    ("html" . "html") ("htm" . "html")
+    ("djot" . "djot") ("dj" . "djot")
+    ("bbcode" . "bbcode") ("bb" . "bbcode"))
+  "Alist mapping a source file extension to a `carve migrate --from' format.
+Used by `carve-import-file' to pick the source format."
+  :type '(alist :key-type string :value-type string)
+  :group 'carve)
+
+(defun carve--import-format (file)
+  "Return the `carve migrate' format for FILE by extension, or nil."
+  (let ((ext (file-name-extension file)))
+    (and ext (cdr (assoc (downcase ext) carve-import-formats)))))
+
+(defun carve--import-target (file)
+  "Return the sibling `.crv' path that `carve-import-file' writes for FILE."
+  (concat (file-name-sans-extension file) ".crv"))
+
+(defun carve--import-read-args (ask-format)
+  "Read the arguments of `carve-import-file'.
+When ASK-FORMAT is non-nil, prompt for the source format."
+  (let* ((current (buffer-file-name))
+         (file (if (and current (carve--import-format current))
+                   current
+                 (read-file-name "Import file: " nil nil t)))
+         (format (and (or ask-format (not (carve--import-format file)))
+                      (completing-read
+                       "Source format: "
+                       (delete-dups (mapcar #'cdr carve-import-formats))
+                       nil t nil nil (carve--import-format file)))))
+    (list file format)))
+
+;;;###autoload
+(defun carve-import-file (file &optional format)
+  "Convert FILE to a sibling `.crv' file with `carve migrate' and visit it.
+FORMAT is the source format (markdown, html, djot or bbcode); when nil it
+is derived from the extension via `carve-import-formats'.  Interactively,
+FILE defaults to the current buffer's file when it has a known extension,
+and a prefix argument prompts for FORMAT.  CLI errors are shown in the
+`*Carve Import*' buffer."
+  (interactive (carve--import-read-args current-prefix-arg))
+  (let* ((file (expand-file-name file))
+         (format (or format (carve--import-format file)
+                     (user-error "Unknown source format for %s" file)))
+         (target (carve--import-target file))
+         (errbuf (get-buffer-create "*Carve Import*"))
+         (errfile (make-temp-file "carve-import")))
+    (unless (carve--available-p)
+      (user-error "The `%s' command was not found on PATH; cannot import"
+                  carve-command))
+    (when (string= file target)
+      (user-error "%s is already a Carve file" file))
+    (when (and (file-exists-p target)
+               (not (y-or-n-p (format "%s exists; overwrite? " target))))
+      (user-error "Import canceled"))
+    (unwind-protect
+        (with-temp-buffer
+          (let ((status (call-process carve-command nil
+                                      (list (current-buffer) errfile) nil
+                                      "migrate" "--from" format file)))
+            (if (eq status 0)
+                (write-region nil nil target nil 'silent)
+              (let ((stdout (buffer-string)))
+                (with-current-buffer errbuf
+                  (let ((inhibit-read-only t))
+                    (erase-buffer)
+                    (insert-file-contents errfile)
+                    (goto-char (point-max))
+                    (insert stdout))))
+              (display-buffer errbuf)
+              (user-error "carve migrate failed (exit %s); see *Carve Import*"
+                          status))))
+      (delete-file errfile))
+    (let ((buf (get-file-buffer target)))
+      (when buf
+        (with-current-buffer buf (revert-buffer t t t))))
+    (find-file target)
+    target))
+
 ;;;; Keymap
 
 (defvar carve-mode-map

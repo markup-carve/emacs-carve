@@ -93,9 +93,27 @@ The mode loads and works fully without the CLI; the preview commands simply
 report that the tool is missing. Set `carve-command` to point at a specific
 binary if it is not named `carve`.
 
+## Importing Markdown, HTML, Djot or BBCode
+
+`M-x carve-import-file` converts a file to Carve with `carve migrate` and
+writes the result next to it with a `.crv` extension (`notes.md` becomes
+`notes.crv`), then visits the new file.
+
+- It defaults to the current buffer's file when its extension is known
+  (`.md`, `.markdown`, `.html`, `.htm`, `.djot`, `.bbcode` and a few more, see
+  `carve-import-formats`); otherwise it asks for a file.
+- With a prefix argument (`C-u M-x carve-import-file`) it also asks for the
+  source format.
+- If the `.crv` file already exists, it asks before overwriting it.
+- When the CLI fails, its output goes to the `*Carve Import*` buffer.
+
+It runs the same `carve-command` as the preview commands. The command is
+autoloaded, so it works from a Markdown buffer before `carve-mode` has loaded.
+
 ## Customization
 
-`M-x customize-group RET carve RET` exposes `carve-command` and the faces
+`M-x customize-group RET carve RET` exposes `carve-command`,
+`carve-import-formats` and the faces
 (`carve-heading-face`, `carve-bold-face`, `carve-italic-face`, and the rest),
 which inherit sensible defaults from the standard font-lock faces.
 
