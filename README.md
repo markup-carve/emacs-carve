@@ -34,7 +34,8 @@ files.
 - Hard breaks (a trailing backslash), the one inline mark that renders to
   nothing and so the one most worth showing.
 - Fenced code (` ``` ` and `~~~`) with an optional language, quoted
-  `"header"`, and `[label]`; raw fences ` ```=FORMAT `.
+  `"header"`, and `[label]`; raw fences ` ```=FORMAT `. A fence body is
+  highlighted by its language's own major mode (see Customization).
 - Comments: line comments `%%` and `%%%`-fenced block comments.
 - Fenced divs and admonitions `:::` with type words and optional title/label,
   the line block, the local hard-break block, and the composite figure
@@ -97,6 +98,18 @@ binary if it is not named `carve`.
 `M-x customize-group RET carve RET` exposes `carve-command` and the faces
 (`carve-heading-face`, `carve-bold-face`, `carve-italic-face`, and the rest),
 which inherit sensible defaults from the standard font-lock faces.
+
+Fence bodies are fontified natively: the body is highlighted in a scratch
+buffer with the major mode its info string names, and those faces are layered
+over `carve-code-face`. A ` ```carve ` body gets Carve's own highlighting.
+
+- Set `carve-fontify-code-blocks-natively` (default `t`) to nil to leave
+  every body in the single code face.
+- `carve-code-lang-modes` maps a language word to a mode, with aliases such as
+  `js`, `sh`/`bash`, `py`, `rb`, `el` and `carve`/`crv`. A word not listed
+  tries `LANG-mode`. When no such mode is installed, the body keeps the code
+  face. Entries in `major-mode-remap-alist` apply, so remapping `js-mode` to
+  `js-ts-mode` there covers fences too.
 
 ## Language server (optional)
 
