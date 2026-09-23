@@ -1486,3 +1486,69 @@ PART 9 S9 E2a: `/see [x](http://a.b/c/) now/' is one italic run."
   (should-not (carve-test--face-includes
                (carve-test--face-at "/see <x@a.b/> now/\n" " now")
                'carve-italic-face)))
+
+;;;; Native fontification of fence bodies
+
+(ert-deftest carve-test-native-fence-js-keyword ()
+  "A `js' fence body is fontified by the JavaScript mode."
+  (let ((carve-fontify-code-blocks-natively t))
+    (let ((face (carve-test--face-at "```js\nconst x = 1;\n```\n" "const")))
+      (should (carve-test--face-includes face 'font-lock-keyword-face))
+      (should (carve-test--face-includes face 'carve-code-face)))))
+
+(ert-deftest carve-test-native-fence-carve-body ()
+  "A `carve' fence body gets Carve's own faces."
+  (let ((carve-fontify-code-blocks-natively t))
+    (should (carve-test--face-includes
+             (carve-test--face-at "```carve\na *bold* b\n```\n" "*bold*")
+             'carve-bold-face))))
+
+(ert-deftest carve-test-native-fence-carve-in-carve ()
+  "A carve fence inside a carve fence stays one code face, and does not recurse."
+  (let ((carve-fontify-code-blocks-natively t)
+        (src "````carve\n```carve\na *x* b\n```\n*y*\n````\n"))
+    (let ((face (carve-test--face-at src "*x*")))
+      (should (carve-test--face-includes face 'carve-code-face))
+      (should-not (carve-test--face-includes face 'carve-bold-face)))
+    (should (carve-test--face-includes (carve-test--face-at src "*y*")
+                                       'carve-bold-face))))
+
+(ert-deftest carve-test-native-fence-off ()
+  "With native fontification off, a body keeps the single code face."
+  (let ((carve-fontify-code-blocks-natively nil))
+    (should (eq (carve-test--face-at "```js\nconst x = 1;\n```\n" "const")
+                'carve-code-face))))
+
+(ert-deftest carve-test-native-fence-unknown-language ()
+  "An info string naming no available mode falls back to the code face."
+  (let ((carve-fontify-code-blocks-natively t))
+    (should (eq (carve-test--face-at "```nosuchlang\nconst x = 1;\n```\n" "const")
+                'carve-code-face))))
+
+(ert-deftest carve-test-native-fence-shorter-inner-fence-stays-open ()
+  "A three-backtick line inside a four-backtick fence does not close it."
+  (let ((carve-fontify-code-blocks-natively t)
+        (src "````python\n```\ndef f(): pass\n````\n\n*after*\n"))
+    (should (carve-test--face-includes (carve-test--face-at src "def")
+                                       'font-lock-keyword-face))
+    (should (carve-test--face-includes (carve-test--face-at src "*after*")
+                                       'carve-bold-face))))
+
+(ert-deftest carve-test-native-fence-language-aliases ()
+  "Short info strings resolve to their language's mode."
+  (should (eq (carve--fence-lang-mode "sh") 'sh-mode))
+  (should (eq (carve--fence-lang-mode "bash") 'sh-mode))
+  (should (eq (carve--fence-lang-mode "py") 'python-mode))
+  (should (eq (carve--fence-lang-mode "crv") 'carve-mode))
+  (should (memq (carve--fence-lang-mode "js") '(js-mode js-ts-mode)))
+  (should-not (carve--fence-lang-mode "math"))
+  (should-not (carve--fence-lang-mode "nosuchlang")))
+
+(ert-deftest carve-test-native-fence-heading-not-in-imenu ()
+  "A heading inside a natively fontified carve fence stays out of imenu."
+  (let ((carve-fontify-code-blocks-natively t))
+    (with-temp-buffer
+      (insert "```carve\n# inside\n```\n\n# outside\n")
+      (carve-mode)
+      (font-lock-ensure)
+      (should (equal (mapcar #'car (carve--imenu-create-index)) '("outside"))))))

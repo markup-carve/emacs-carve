@@ -58,6 +58,7 @@
 ;;; Code:
 
 (require 'rx)
+(require 'seq)
 
 (defgroup carve nil
   "Major mode for editing Carve markup."
@@ -76,6 +77,49 @@ when the tool is absent, so the mode never hard-depends on it."
 (defcustom carve-mode-hook nil
   "Hook run when entering `carve-mode'."
   :type 'hook
+  :group 'carve)
+
+(defcustom carve-fontify-code-blocks-natively t
+  "When non-nil, fontify a fence body with its language's major mode.
+The language is the first word of the info string, resolved through
+`carve-code-lang-modes'.  A body whose language names no available mode
+keeps the single `carve-code-face'."
+  :type 'boolean
+  :group 'carve)
+
+(defcustom carve-code-lang-modes
+  '(("js" . js-mode) ("javascript" . js-mode) ("mjs" . js-mode)
+    ("cjs" . js-mode) ("jsx" . js-jsx-mode)
+    ("ts" typescript-mode typescript-ts-mode)
+    ("typescript" typescript-mode typescript-ts-mode)
+    ("json" js-json-mode json-mode js-mode)
+    ("sh" . sh-mode) ("bash" . sh-mode) ("zsh" . sh-mode)
+    ("shell" . sh-mode) ("console" . sh-mode)
+    ("py" . python-mode) ("python" . python-mode)
+    ("rb" . ruby-mode) ("ruby" . ruby-mode)
+    ("el" . emacs-lisp-mode) ("elisp" . emacs-lisp-mode)
+    ("emacs-lisp" . emacs-lisp-mode)
+    ("c" . c-mode) ("h" . c-mode) ("cpp" . c++-mode) ("c++" . c++-mode)
+    ("cs" . csharp-mode) ("csharp" . csharp-mode)
+    ("rs" . rust-mode) ("rust" . rust-mode)
+    ("go" . go-mode) ("java" . java-mode) ("php" . php-mode)
+    ("html" . mhtml-mode) ("xml" . nxml-mode) ("svg" . nxml-mode)
+    ("css" . css-mode) ("scss" . scss-mode)
+    ("yml" . yaml-mode) ("yaml" . yaml-mode) ("toml" . conf-toml-mode)
+    ("ini" . conf-mode) ("sql" . sql-mode) ("diff" . diff-mode)
+    ("patch" . diff-mode) ("make" . makefile-gmake-mode)
+    ("makefile" . makefile-gmake-mode) ("tex" . latex-mode)
+    ("latex" . latex-mode) ("md" . markdown-mode)
+    ("markdown" . markdown-mode) ("carve" . carve-mode) ("crv" . carve-mode)
+    ("math") ("text") ("txt") ("plain"))
+  "Alist mapping a fence's language word to the major mode that fontifies it.
+The value is a mode, a list of modes (the first defined one wins), or nil
+to keep the plain code face.  A language not listed here tries
+`LANG-mode'.  `major-mode-remap-alist' is honored, so remapping `js-mode'
+to `js-ts-mode' there applies to fences too."
+  :type '(alist :key-type string
+                :value-type (choice (const :tag "Plain code face" nil)
+                                    function (repeat function)))
   :group 'carve)
 
 ;;;; Faces
@@ -370,6 +414,105 @@ an indented fence at the top level is the cheaper error."
             (goto-char (point-max))
             (throw 'done t)))))
     nil))
+
+;;;; Native fontification of fence bodies
+
+(defvar carve--native-fontifying nil
+  "Non-nil while a fence body is being fontified in a temporary buffer.
+A carve fence inside that body keeps the plain code face, so a carve body
+never recurses into the temporary buffer it is already being fontified in.")
+
+(defvar carve--native-buffers nil
+  "Alist of MODE to its reusable temporary fontification buffer.
+The value is the symbol `failed' when MODE could not be set up.")
+
+(defun carve--fence-lang-mode (lang)
+  "Return the major mode that fontifies a fence of language LANG, or nil."
+  (let* ((key (downcase lang))
+         (entry (assoc key carve-code-lang-modes))
+         (candidates
+          (cond
+           (entry (let ((v (cdr entry))) (if (listp v) v (list v))))
+           ((string-match-p "\\`[a-z0-9+_-]+\\'" key)
+            (list (intern (concat key "-mode"))))))
+         (mode (seq-find #'fboundp candidates)))
+    (when mode
+      (let ((remap (and (boundp 'major-mode-remap-alist)
+                        (cdr (assq mode major-mode-remap-alist)))))
+        (if (and remap (fboundp remap)) remap mode)))))
+
+(defun carve--native-buffer (mode)
+  "Return the temporary buffer that fontifies MODE, or nil when MODE fails."
+  (let ((buf (cdr (assq mode carve--native-buffers))))
+    (cond
+     ((eq buf 'failed) nil)
+     ((buffer-live-p buf) buf)
+     (t
+      (setq buf (generate-new-buffer (format " *carve-fontify:%s*" mode)))
+      (condition-case nil
+          (with-current-buffer buf
+            ;; No user hooks: an LSP client or linter has no business in a
+            ;; scratch buffer that exists only to borrow faces.
+            (delay-mode-hooks (funcall mode))
+            (setf (alist-get mode carve--native-buffers) buf))
+        (error
+         (kill-buffer buf)
+         (setf (alist-get mode carve--native-buffers) 'failed)
+         nil))))))
+
+(defun carve--fence-lang ()
+  "Return the language word of the fence opener in match group 1, or nil."
+  (let ((opener (match-string-no-properties 1)))
+    (when (string-match (rx string-start (zero-or-more (in " \t"))
+                            (or (>= 3 ?`) (>= 3 ?~))
+                            (zero-or-more (in " \t")) (opt "=")
+                            (group (not (any " \t{=`~"))
+                                   (zero-or-more (not (any " \t{")))))
+                        opener)
+      (match-string 1 opener))))
+
+(defun carve--fontify-fence-natively ()
+  "Paint the fence body in match group 2 with its language's faces.
+The body already carries `carve-code-face'; each native face is prepended
+to it, so text the language leaves plain keeps the code face.  Always
+returns nil, so font-lock itself applies nothing."
+  (when (and carve-fontify-code-blocks-natively
+             (match-beginning 2)
+             (< (match-beginning 2) (match-end 2)))
+    (save-match-data
+      (let* ((beg (match-beginning 2))
+             (end (match-end 2))
+             (lang (carve--fence-lang))
+             (mode (and lang (carve--fence-lang-mode lang)))
+             (buf (and mode
+                       (not (and carve--native-fontifying
+                                 (provided-mode-derived-p mode 'carve-mode)))
+                       (carve--native-buffer mode))))
+        (when buf
+          (let ((text (buffer-substring-no-properties beg end)))
+            (condition-case nil
+                (with-current-buffer buf
+                  ;; An unchanged body is not refontified: jit-lock hands a
+                  ;; long block to this matcher once per chunk.
+                  (unless (string= text (buffer-substring-no-properties
+                                         (point-min) (point-max)))
+                    (let ((inhibit-read-only t)
+                          (carve--native-fontifying t))
+                      (erase-buffer)
+                      (insert text)
+                      (font-lock-ensure))))
+              (error (setq buf nil)))
+            (when buf
+              (let ((pos 1)
+                    (stop (1+ (length text))))
+                (while (< pos stop)
+                  (let ((next (next-single-property-change pos 'face buf stop))
+                        (face (get-text-property pos 'face buf)))
+                    (when face
+                      (font-lock-prepend-text-property
+                       (+ beg pos -1) (+ beg next -1) 'face face))
+                    (setq pos next))))))))))
+  nil)
 
 (defun carve--fontify-comment-blocks (limit)
   "Search for a `%%%\'-fenced comment block between point and LIMIT.
@@ -807,6 +950,7 @@ construct, which keeps its own face with FACE prepended."
     (carve--fontify-fenced-blocks
      (1 'carve-code-face)
      (2 'carve-code-face keep)
+     (2 (carve--fontify-fence-natively) nil t)
      (3 'carve-code-face)
      (4 'carve-attribute-face t))
 
@@ -1941,8 +2085,9 @@ widening the END too means one scan per change instead of one per chunk."
       (while (re-search-forward carve--heading-re nil t)
         ;; Skip a heading inside a verbatim body by checking for the code
         ;; face.
-        (unless (eq (get-text-property (match-beginning 3) 'face)
-                    'carve-code-face)
+        (unless (let ((face (get-text-property (match-beginning 3) 'face)))
+                  (or (eq face 'carve-code-face)
+                      (and (listp face) (memq 'carve-code-face face))))
           (let* ((level (length (match-string 1)))
                  (text (string-trim (match-string-no-properties 3)))
                  (label (concat (make-string (1- level) ?\s) text)))
