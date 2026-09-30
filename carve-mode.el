@@ -30,7 +30,7 @@
 
 ;;; Commentary:
 
-;; Carve is a lightweight markup language for documents (see https://github.com/markup-carve/carve).
+;; Carve is a lightweight markup language for documents and the web (see https://github.com/markup-carve/carve).
 ;; This package provides `carve-mode', a major mode that adds syntax
 ;; highlighting, a comment syntax, an imenu index of headings, outline support,
 ;; and an optional preview command for `.crv' files.
