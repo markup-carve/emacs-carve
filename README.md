@@ -1,7 +1,7 @@
 # carve-mode
 
-An Emacs major mode for [Carve](https://github.com/markup-carve/carve), a post-Markdown
-markup language whose mnemonic is "the markup looks like its output."
+An Emacs major mode for [Carve](https://github.com/markup-carve/carve), a lightweight
+markup language for documents whose mnemonic is "the markup looks like its output."
 
 `carve-mode` provides syntax highlighting, a `%%` comment syntax, an imenu
 index of headings, outline support, and an optional preview command for `.crv`
