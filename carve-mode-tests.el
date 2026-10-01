@@ -659,6 +659,19 @@ engine's:
                  (carve-test--face-at indented "%%") 'carve-code-face))
     (should (null (carve-test--syntax-at indented "%%")))))
 
+(ert-deftest carve-heading-caption-percent-comments ()
+  (dolist (prefix '("# a " "> # a " "![alt](x.png)\n^ cap " "> ![alt](x.png)\n> ^ cap "))
+    (dolist (body '("`x %% b` c" "``x %% b`` c" "!`x %% b` c" "$`x %% b` c" "`x %% b"))
+      (let ((source (concat prefix body "\n\nplain tail")))
+        (should-not (carve-test--face-includes
+                     (carve-test--face-at source "%%") 'font-lock-comment-face))
+        (should-not (carve-test--face-includes
+                     (carve-test--face-at source "plain tail") 'font-lock-comment-face))))
+    (dolist (gap '(" " "\t"))
+      (should (carve-test--face-includes
+               (carve-test--face-at (concat prefix "`x`" gap "%% hidden") "hidden")
+               'font-lock-comment-face)))))
+
 (provide 'carve-mode-tests)
 
 ;;; carve-mode-tests.el ends here
