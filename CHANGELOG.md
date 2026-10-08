@@ -27,6 +27,9 @@ Releases before 0.1.5 are described on the
 
 ### Fixed
 
+- A block quote reads at document contrast, with a stronger border and its
+  attribution aligned to the body it credits (#50).
+
 - The bundled `sample.crv` matches its cross-reference against the id's own
   case. `</#plan>` was written as though it reached a heading `{#Plan}`; names
   compare case exactly from carve 0.1.8, so it did not (#47).
