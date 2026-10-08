@@ -8,6 +8,10 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+### Fixed
+
+- Quote text inherits the default face instead of the documentation face.
+
 ## [0.1.5] - 2026-10-08
 
 ### Added

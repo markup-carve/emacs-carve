@@ -185,7 +185,7 @@ to `js-ts-mode' there applies to fences too."
   :group 'carve)
 
 (defface carve-blockquote-face
-  '((t :inherit font-lock-doc-face))
+  '((t :inherit default))
   "Face for blockquote lines."
   :group 'carve)
 
