@@ -319,6 +319,36 @@ one."
     (should (carve-test--face-includes face 'carve-include-section-face))
     (should-not (carve-test--face-includes face 'carve-tag-face))))
 
+(ert-deftest carve-test-include-directive-tight-option-is-not-a-mention ()
+  "An option whose `@\' touches the path is still an option.
+
+markup-carve/carve#2775 converged the spellings, and a selector or an option
+needs no whitespace before its marker.  The path scan stops at `#\', `@\',
+`}\' and whitespace alike, so this holds without a rule per spelling - but the
+option test above is written WITH the pad, so nothing here could show it."
+  (let ((face (carve-test--face-at "See {{ ch.crv@shift:auto }} here\n" "@shift")))
+    (should (carve-test--face-includes face 'carve-include-option-face))
+    (should-not (carve-test--face-includes face 'carve-mention-face))))
+
+(ert-deftest carve-test-include-directive-quoted-path-touching-a-selector ()
+  "A quoted path closes on its own quote, so a selector may touch it."
+  (let* ((text "See {{ \"a ch.crv\"#intro }} here\n")
+         (face (carve-test--face-at text "#intro")))
+    (should (carve-test--face-includes face 'carve-include-section-face))
+    (should-not (carve-test--face-includes face 'carve-tag-face))))
+
+(ert-deftest carve-test-include-directive-selector-keeps-its-case ()
+  "Both cases of a selector are the directive\'s, not the tag rule\'s.
+
+Ids compare case exactly from carve 0.1.8, so `#Intro\' and `#intro\' are
+different selectors.  The face is the same either way; what matters is that the
+directive claims both rather than leaving one to the tag keyword."
+  (dolist (selector (list "#Intro" "#intro"))
+    (let ((face (carve-test--face-at
+                 (format "See {{ ch.crv%s }} here\n" selector) selector)))
+      (should (carve-test--face-includes face 'carve-include-section-face))
+      (should-not (carve-test--face-includes face 'carve-tag-face)))))
+
 (ert-deftest carve-test-include-directive-option-is-not-a-mention ()
   "A directive's option name is a parameter, not a mention."
   (let ((face (carve-test--face-at "See {{ ch.crv @shift:auto }} here\n" "@shift")))
