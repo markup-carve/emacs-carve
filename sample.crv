@@ -24,7 +24,7 @@ $$`\int_0^1 x\,dx`
 Read [Djot](https://djot.net "The spec") for details, and the
 [introduction][intro] too. A collapsed reference: [Other Page][].
 Autolink <https://example.com> and email <hello@example.com>.
-Cross-reference: see </#inline>. An image with a caption:
+Cross-reference: see </#Inline>. An image with a caption:
 
 ![Apollo 11](apollo.jpg)
 ^ Figure 1: First moon landing
