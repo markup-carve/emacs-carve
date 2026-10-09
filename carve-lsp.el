@@ -2,7 +2,7 @@
 
 ;; Author: markup-carve
 ;; Maintainer: markup-carve
-;; Version: 0.1.4
+;; Version: 0.1.5
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve
