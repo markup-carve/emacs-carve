@@ -12,7 +12,10 @@ Releases before 0.1.5 are described on the
 
 ### Fixed
 
-- A `^ text` line before the first block remains prose.
+- A `^ text` line before the first block remains prose, including after
+  leading blank lines (#57).
+- Both package headers declare the release they ship in. 0.1.5 reported
+  itself as 0.1.4 to package managers (#56).
 
 ## [0.1.5] - 2026-10-08
 
