@@ -197,7 +197,21 @@ fully reproduce. `carve-mode` approximates them by requiring an opener to sit
 at the start of a line or after whitespace or an opening bracket, so a handful
 of edge cases (intraword literals, unmatched openers spanning lines) may be
 highlighted slightly more or less eagerly than the renderer would parse them.
+A closer needs a non-space before it and no letter or digit after it, and a
+run may cross one line break into a line that continues the paragraph.
 The fontification is a reading aid, not a parser.
+
+Block context is read from the lines above, the way the engine reads it: a list
+marker or a `^ ` line after a paragraph line is text, and a caption is painted
+only below a table row, a fence, a quote, an image or display math line or a
+container fence, with at most one blank line between. Inside `> ` quotes,
+headings, list markers, definitions, tables and container fences are painted.
+`M-q` fills a paragraph, a list item, a quote (behind its markers) or a
+definition, and leaves headings, table rows, fences, container fences, comment
+lines, attribute lines and code or comment block bodies alone.
+
+A link label or destination stays on its line and is read up to 500
+characters; a longer one is not painted as a link.
 
 A bare delimiter never pairs across an inline link, an image or an autolink
 (PART 9 §9 E2a), so `/see [x](http://a.b/c/) now/` is one italic run. That

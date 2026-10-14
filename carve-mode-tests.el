@@ -697,10 +697,13 @@ engine's:
                      (carve-test--face-at source "%%") 'font-lock-comment-face))
         (should-not (carve-test--face-includes
                      (carve-test--face-at source "plain tail") 'font-lock-comment-face))))
-    (dolist (gap '(" " "\t"))
-      (should (carve-test--face-includes
-               (carve-test--face-at (concat prefix "`x`" gap "%% hidden") "hidden")
-               'font-lock-comment-face)))))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat prefix "`x` %% hidden") "hidden")
+             'font-lock-comment-face))
+    ;; A tab before the run does not separate it (carve-js 0.1.11): text.
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat prefix "`x`\t%% shown") "shown")
+                 'font-lock-comment-face))))
 
 (ert-deftest carve-caption-needs-an-earlier-block ()
   (dolist (prefix '("" "\n" "  \n\n"))
@@ -710,6 +713,195 @@ engine's:
   (should (carve-test--face-includes
            (carve-test--face-at "![alt](x.png)\n^ cap\n" "^ cap")
            'carve-markup-face)))
+
+;;;; Editor audit (2026-10): fill, block context, labels, escapes, perf
+
+(defun carve-test--fill (text pos)
+  "Insert TEXT, run `fill-paragraph' at POS with `fill-column' 70, return it."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (setq fill-column 70)
+    (goto-char pos)
+    (fill-paragraph)
+    (buffer-string)))
+
+(ert-deftest carve-test-fill-keeps-blocks-apart ()
+  "M-q fills prose and leaves every block line where it is."
+  (dolist (case '(("- first item\n- second item\n" . 1)
+                  ("# Heading\ntext after heading\n" . 12)
+                  ("text\n# Heading\n" . 1)
+                  ("text\n> quoted\n" . 1)
+                  ("> a\n> > nested\n" . 3)
+                  (":: term\n: def one\n" . 3)
+                  ("|= a |= b |\n| 1 | 2 |\n" . 3)
+                  ("text\n```js\nx = 1\ny = 2\n```\n" . 1)
+                  ("```js\nx = 1\ny = 2\n```\n" . 8)
+                  ("%%%\nhidden one\nhidden two\n%%%\n" . 6)
+                  ("text\n%% note\nmore\n" . 1)
+                  ("::: note\nbody\n:::\n" . 2)
+                  ("text\n---\nmore\n" . 1)))
+    (should (equal (carve-test--fill (car case) (cdr case)) (car case)))))
+
+(ert-deftest carve-test-fill-joins-prose ()
+  "M-q still joins a paragraph, a list item, a quote and a container body."
+  (should (equal (carve-test--fill "para one\npara two\n" 1) "para one para two\n"))
+  (should (equal (carve-test--fill "- item one\n  item two\n- next\n" 3)
+                 "- item one item two\n- next\n"))
+  (should (equal (carve-test--fill "> quoted one\n> quoted two\n" 3)
+                 "> quoted one quoted two\n"))
+  (should (equal (carve-test--fill "::: note\nbody one\nbody two\n:::\n" 10)
+                 "::: note\nbody one body two\n:::\n"))
+  (should (equal (carve-test--fill "{.c}\ntext one\ntext two\n" 7)
+                 "{.c}\ntext one text two\n")))
+
+(ert-deftest carve-test-fill-wraps-list-item-under-its-text ()
+  (should (equal (carve-test--fill
+                  (concat "- " (mapconcat #'identity (make-list 20 "word") " ") "\n") 1)
+                 (concat "- " (mapconcat #'identity (make-list 13 "word") " ")
+                         "\n  " (mapconcat #'identity (make-list 7 "word") " ") "\n"))))
+
+(ert-deftest carve-test-marker-after-paragraph-is-text ()
+  (dolist (text '("para\n- not a list\n" "para\n1. not a list\n" "para\nwrapped\nb) not a list\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at text (if (string-match-p "b)" text) "b)"
+                                             (if (string-match-p "1\\." text) "1." "- ")))
+                 'carve-list-marker-face))))
+
+(ert-deftest carve-test-marker-opens-item-after-a-list-or-blank ()
+  (should (carve-test--face-includes
+           (carve-test--face-at "- a\nlazy\n- b\n" "- b") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "para\n\n- a\n" "- a") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "# H\n- a\n" "- a") 'carve-list-marker-face))
+  ;; Past the lookback limit the context is unknown, and the marker stays one.
+  (should (carve-test--face-includes
+           (carve-test--face-at
+            (concat "- a\n" (mapconcat #'identity (make-list 210 "lazy") "\n")
+                    "\n- second\n")
+            "- second")
+           'carve-list-marker-face)))
+
+(ert-deftest carve-test-caption-needs-a-host-block ()
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "# H\n^ literal\n" "^") 'carve-markup-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "para\n^ literal\n" "^") 'carve-markup-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "para\n\n^ literal\n" "^") 'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "| t |\n^ cap\n" "^") 'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "| t |\n\n^ cap\n" "^") 'carve-markup-face)))
+
+(ert-deftest carve-test-blocks-inside-quotes ()
+  (should (carve-test--face-includes
+           (carve-test--face-at "> # Quoted\n" "Quoted") 'carve-heading-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> - item\n" "- ") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> - a\n> lazy\n> - b\n" "- b") 'carve-list-marker-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> para\n> - not a list\n" "- not") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> :: term\n" "::") 'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> | x |\n" "|") 'carve-table-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> ::: note\n" ":::") 'carve-admonition-face)))
+
+(ert-deftest carve-test-pipes-only-on-table-rows ()
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "a | b shell\n" "|") 'carve-table-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "| a | b\n" "|") 'carve-table-face)))
+
+(ert-deftest carve-test-link-stays-on-its-line ()
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "[a\n\nb](u)\n" "b") 'carve-link-text-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "[a](u\nv)\n" "u") 'carve-url-face)))
+
+(ert-deftest carve-test-percent-in-a-label-hides-the-label ()
+  (let ((text "[a %% b](u) z\n"))
+    (should (carve-test--face-includes (carve-test--face-at text "b") 'font-lock-comment-face))
+    (should (carve-test--face-includes (carve-test--face-at text "a") 'carve-link-text-face))
+    (should-not (carve-test--face-includes (carve-test--face-at text "z") 'font-lock-comment-face)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "::: note [%% hidden]\nx\n:::\n" "hidden")
+           'font-lock-comment-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "[a\t%% b](u)\n" "b") 'font-lock-comment-face)))
+
+(ert-deftest carve-test-tab-before-percent-is-text ()
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "b\t%% shown\n" "shown") 'font-lock-comment-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "\t%% hidden\n" "hidden") 'font-lock-comment-face)))
+
+(ert-deftest carve-test-escapes-keep-constructs-closed ()
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "\\`x` y\n" "x") 'carve-code-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "\\[a](u)\n" "a") 'carve-link-text-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "\\\\[a](u)\n" "a") 'carve-link-text-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "\\<https://x.y>\n" "https") 'carve-url-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "\\$`m`\n" "$") 'carve-math-face)))
+
+(ert-deftest carve-test-emphasis-nesting-and-flanking ()
+  (should (carve-test--face-includes
+           (carve-test--face-at "/it *b* it/\n" "it") 'carve-italic-face))
+  (let ((face (carve-test--face-at "/it *b* it/\n" "b")))
+    (should (carve-test--face-includes face 'carve-italic-face))
+    (should (carve-test--face-includes face 'carve-bold-face)))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "x *a*b y\n" "a") 'carve-bold-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a *b\nc* d\n" "c") 'carve-bold-face)))
+
+(ert-deftest carve-test-imenu-and-outline-skip-verbatim ()
+  (with-temp-buffer
+    (insert "# One\n\n%%%\n# Hidden\n%%%\n\n```\n## Code\n```\n\n####### seven\n\n## Two\n")
+    (carve-mode)
+    (font-lock-ensure)
+    (should (equal (mapcar #'car (carve--imenu-create-index)) '("One" " Two")))
+    (when (boundp 'outline-search-function)
+      (goto-char (point-min))
+      (let (seen)
+        (while (outline-next-heading)
+          (push (buffer-substring-no-properties (point) (line-end-position)) seen))
+        (should (equal (nreverse seen) '("## Two")))))))
+
+(ert-deftest carve-test-syntax-propertize-region-stays-local ()
+  "A change below a closed fence re-propertizes from its paragraph, not the top."
+  (with-temp-buffer
+    (insert "intro\n\n```\na %% b\n\nc\n```\n\npara one\npara two\n")
+    (carve-mode)
+    (let* ((para (progn (goto-char (point-min)) (search-forward "para two")
+                        (match-beginning 0)))
+           (inside (progn (goto-char (point-min)) (search-forward "c\n```")
+                          (match-beginning 0)))
+           (fence (progn (goto-char (point-min)) (search-forward "```")
+                         (match-beginning 0))))
+      (should (equal (car (carve--syntax-propertize-extend-region para (point-max)))
+                     (save-excursion (goto-char para) (forward-line -2) (point))))
+      (should (equal (car (carve--syntax-propertize-extend-region inside (point-max)))
+                     fence)))))
+
+(ert-deftest carve-test-verbatim-cache-survives-an-edit-below ()
+  "An edit after a closed fence does not reread its closer as an opener."
+  (with-temp-buffer
+    (insert "```\na\n```\n\nzzz\n")
+    (carve-mode)
+    (should-not (carve--verbatim-region-at (- (point-max) 2)))
+    (goto-char (point-max))
+    (insert "more text\n")
+    (should-not (carve--verbatim-region-at (- (point-max) 2)))
+    (should (= 1 (length carve--verbatim-cache)))))
 
 (provide 'carve-mode-tests)
 
