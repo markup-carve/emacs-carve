@@ -702,6 +702,15 @@ engine's:
                (carve-test--face-at (concat prefix "`x`" gap "%% hidden") "hidden")
                'font-lock-comment-face)))))
 
+(ert-deftest carve-caption-needs-an-earlier-block ()
+  (dolist (prefix '("" "\n" "  \n\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat prefix "^ cap\n") "^ cap")
+                 'carve-markup-face)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "![alt](x.png)\n^ cap\n" "^ cap")
+           'carve-markup-face)))
+
 (provide 'carve-mode-tests)
 
 ;;; carve-mode-tests.el ends here

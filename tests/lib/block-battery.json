@@ -73,7 +73,8 @@
     },
     {
       "src": "^ cap",
-      "want": "caption"
+      "want": "none",
+      "why": "a caption needs a host above it; the engine renders a lone first-line `^ cap` as `<p>^ cap</p>`"
     },
     {
       "src": "#  Title",

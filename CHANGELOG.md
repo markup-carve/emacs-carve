@@ -8,9 +8,11 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-10-14
+
 ### Fixed
 
-- Quote text inherits the default face instead of the documentation face.
+- A `^ text` line before the first block remains prose.
 
 ## [0.1.5] - 2026-10-08
 
