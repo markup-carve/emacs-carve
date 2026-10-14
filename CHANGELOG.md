@@ -8,6 +8,34 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+### Fixed
+
+- `M-q` no longer joins block lines: every block opener starts a paragraph,
+  single-line blocks (headings, table rows, fences, container fences, comment
+  and attribute lines, thematic breaks) separate, code and comment block
+  bodies are left alone, a quote is filled behind its markers and a list item
+  wraps under its text.
+- A list marker or `^ ` line after a paragraph line is text, and a caption is
+  painted only below a block that takes one. A marker after a list item's
+  lazy continuation still opens the next item.
+- Headings, list markers, definitions, tables and container fences are
+  painted inside `> ` quotes.
+- Link, image and citation labels no longer reach across lines, and a line
+  of unclosed brackets is no longer quadratic.
+- A `%%` at the start of a label or after a space inside one hides the rest
+  of the label only, so the link still forms and the text after it stays
+  live; `::: note [%% hidden]` hides its label.
+- A tab before `%%` no longer opens a comment, except as indentation.
+- An escaped backtick, bracket, `<` or `$` no longer opens a code span, a
+  link, an autolink or inline math.
+- `|` is table punctuation only on a row that opens and closes with a pipe.
+- An emphasis run encloses the runs inside it (`/it *b* it/`), may cross one
+  line break, and needs a flanking closer (`*a*b` is text).
+- imenu and outline skip headings inside code and comment blocks, and
+  outline no longer matches seven or more `#`.
+- Editing a large buffer no longer re-propertizes and re-scans it from the
+  top on every keystroke: fence state is cached up to the first change.
+
 ## [0.1.6] - 2026-10-14
 
 ### Fixed
