@@ -2,7 +2,7 @@
 
 ;; Author: markup-carve
 ;; Maintainer: markup-carve
-;; Version: 0.1.5
+;; Version: 0.1.6
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve
@@ -1116,8 +1116,20 @@ construct, which keeps its own face with FACE prepended."
     (,(rx line-start (zero-or-more (in " \t")) (group ">")
           (or " " line-end))
      (1 'carve-blockquote-face))
-    (,(rx line-start (zero-or-more (in " \t")) (group "^") (one-or-more " ")
-          (not (any " \t\n")))
+    ((lambda (limit)
+       (catch 'caption
+         (while (re-search-forward
+                 (rx line-start (zero-or-more (in " \t"))
+                     (group "^") (one-or-more " ")
+                     (not (any " \t\n")))
+                 limit t)
+           (let ((marker (match-beginning 1)))
+             (when (save-excursion
+                     (goto-char marker)
+                     (skip-chars-backward " \t\n")
+                     (not (bobp)))
+               (throw 'caption t))))
+         nil))
      (1 'carve-markup-face))
 
     ;; Task list items: - [ ] / - [x] (marker + checkbox).
