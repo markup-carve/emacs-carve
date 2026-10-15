@@ -8,34 +8,36 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-10-15
+
 ### Fixed
 
 - `M-q` no longer joins block lines: every block opener starts a paragraph,
   single-line blocks (headings, table rows, fences, container fences, comment
   and attribute lines, thematic breaks) separate, code and comment block
   bodies are left alone, a quote is filled behind its markers and a list item
-  wraps under its text.
+  wraps under its text (#59).
 - A list marker or `^ ` line after a paragraph line is text, and a caption is
   painted only below a block that takes one. A marker after a list item's
-  lazy continuation still opens the next item.
+  lazy continuation still opens the next item (#59).
 - Headings, list markers, definitions, tables and container fences are
-  painted inside `> ` quotes.
+  painted inside `> ` quotes (#59).
 - A link or image label may wrap inside its paragraph but no longer reaches
   past it, a citation label stays on its line, and a line of unclosed
-  brackets is no longer quadratic.
+  brackets is no longer quadratic (#59, #60).
 - A `%%` at the start of a label or after a space inside one hides the rest
   of the label only, so the link still forms and the text after it stays
-  live; `::: note [%% hidden]` hides its label.
-- A tab before `%%` no longer opens a comment, except as indentation.
+  live; `::: note [%% hidden]` hides its label (#59).
+- A tab before `%%` no longer opens a comment, except as indentation (#59).
 - An escaped backtick, bracket, `<` or `$` no longer opens a code span, a
-  link, an autolink or inline math.
-- `|` is table punctuation only on a row that opens and closes with a pipe.
+  link, an autolink or inline math (#59).
+- `|` is table punctuation only on a row that opens and closes with a pipe (#59).
 - An emphasis run encloses the runs inside it (`/it *b* it/`), may cross one
-  line break, and needs a flanking closer (`*a*b` is text).
+  line break, and needs a flanking closer (`*a*b` is text) (#59).
 - imenu and outline skip headings inside code and comment blocks, and
-  outline no longer matches seven or more `#`.
+  outline no longer matches seven or more `#` (#59).
 - Editing a large buffer no longer re-propertizes and re-scans it from the
-  top on every keystroke: fence state is cached up to the first change.
+  top on every keystroke: fence state is cached up to the first change (#59).
 
 ## [0.1.6] - 2026-10-14
 
