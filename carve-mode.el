@@ -1650,7 +1650,7 @@ and a `]' must follow on the same line."
     ;; prose and the whole thing read as a link to a reference.  The label is
     ;; starred, so the collapsed form is the same match with nothing between
     ;; the second pair of brackets.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (not (any "]\n")))) (group "]")
+    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
           (group "[") (group (** 0 500 (not (any "]\n")))) (group "]"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face)
@@ -1660,7 +1660,7 @@ and a `]' must follow on the same line."
      (6 'carve-markup-face))
 
     ;; Images: ![alt](src)
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (not (any "]\n")))) (group "]")
+    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
           (group "(") (group (** 0 500 (not (any ")\n")))) (group ")"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face)
@@ -1675,7 +1675,7 @@ and a `]' must follow on the same line."
 
     ;; Inline link.
     ;; [text](url), and the titled form.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (not (any "]\n")))) (group "]")
+    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
           (group "(") (group (** 0 500 (not (any ")\n")))) (group ")"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face keep)
@@ -1690,7 +1690,7 @@ and a `]' must follow on the same line."
     ;; as readily as a named one.  Written down because the collapsed spelling
     ;; is a construct of its own in the grammar, and a rule nobody names reads
     ;; as a construct nobody implemented.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (not (any "]\n")))) (group "]")
+    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
           (group "[") (group (** 0 500 (not (any "]\n")))) (group "]"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face keep)
