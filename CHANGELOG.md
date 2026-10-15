@@ -20,8 +20,9 @@ Releases before 0.1.5 are described on the
   lazy continuation still opens the next item.
 - Headings, list markers, definitions, tables and container fences are
   painted inside `> ` quotes.
-- Link, image and citation labels no longer reach across lines, and a line
-  of unclosed brackets is no longer quadratic.
+- A link or image label may wrap inside its paragraph but no longer reaches
+  past it, a citation label stays on its line, and a line of unclosed
+  brackets is no longer quadratic.
 - A `%%` at the start of a label or after a space inside one hides the rest
   of the label only, so the link still forms and the text after it stays
   live; `::: note [%% hidden]` hides its label.

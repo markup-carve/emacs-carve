@@ -818,6 +818,11 @@ engine's:
                (carve-test--face-at "| a | b\n" "|") 'carve-table-face)))
 
 (ert-deftest carve-test-link-stays-on-its-line ()
+  ;; A label may wrap inside its paragraph, as carve renders `[a\nb](u)'.
+  (should (carve-test--face-includes
+           (carve-test--face-at "[a\nb](u)\n" "b") 'carve-link-text-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "![a\nb](i.png)\n" "b") 'carve-link-text-face))
   (should-not (carve-test--face-includes
                (carve-test--face-at "[a\n\nb](u)\n" "b") 'carve-link-text-face))
   (should-not (carve-test--face-includes
