@@ -107,6 +107,33 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
     (should-not (carve-test--face-includes
                  (carve-test--face-at tsv "\tb\"") 'font-lock-delimiter-face))))
 
+;; Every non-separator character of a csv/tsv body carries a value face.
+(ert-deftest carve-test-delimited-fence-fields-all-typed ()
+  (dolist (case '(("```csv\nPlan,Seats\nStarter,1\n\"a\"\"b\",x y\n```\n" . ",\n")
+                  ("```tsv\nPlan\tSeats\nStarter\t1\n```\n" . "\t\n")))
+    (let* ((text (car case)) (seps (cdr case))
+           (beg (+ (string-match "\n" text) 1))
+           (end (string-match "\n```\n" text)))
+      (with-temp-buffer
+        (insert text)
+        (carve-mode)
+        (font-lock-ensure)
+        (dotimes (i (- end beg))
+          (let* ((pos (+ 1 beg i))
+                 (ch (char-after pos))
+                 (face (get-text-property pos 'face)))
+            (unless (memq ch (string-to-list seps))
+              (should (or (carve-test--face-includes face 'font-lock-variable-name-face)
+                          (carve-test--face-includes face 'font-lock-string-face)
+                          (carve-test--face-includes face 'font-lock-escape-face))))))
+        (goto-char (point-min))
+        (search-forward "Plan")
+        (should (carve-test--face-includes
+                 (get-text-property (match-beginning 0) 'face) 'bold))
+        (search-forward "Starter")
+        (should-not (carve-test--face-includes
+                     (get-text-property (match-beginning 0) 'face) 'bold))))))
+
 (ert-deftest carve-test-delimited-fence-quoted-records ()
   (let ((csv "```csv\n\"first\nsecond\",next\na\"b,plain\n\"a\"\"b\"extra,tail\n\"open\nlast"))
     (should (carve-test--face-includes
@@ -117,6 +144,8 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
                  (carve-test--face-at csv "\"b,plain") 'font-lock-string-face))
     (should-not (carve-test--face-includes
                  (carve-test--face-at csv "extra") 'font-lock-string-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at csv "extra") 'font-lock-variable-name-face))
     (should (carve-test--face-includes
              (carve-test--face-at csv "last") 'font-lock-string-face))))
 

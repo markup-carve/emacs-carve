@@ -709,6 +709,7 @@ an indented fence at the top level is the cheaper error."
   "Fontify delimited fields from BEG to END using SEPARATOR."
   (let ((pos beg)
         (field-start t)
+        (header t)
         (delimiter-face (if (facep 'font-lock-delimiter-face)
                             'font-lock-delimiter-face
                           'font-lock-punctuation-face)))
@@ -719,7 +720,7 @@ an indented fence at the top level is the cheaper error."
           (font-lock-prepend-text-property pos (1+ pos) 'face delimiter-face)
           (setq field-start t))
          ((eq char ?\n)
-          (setq field-start t))
+          (setq field-start t header nil))
          ((and field-start (eq char ?\"))
           (let ((start pos)
                 (escapes nil)
@@ -732,13 +733,20 @@ an indented fence at the top level is the cheaper error."
                   (setq closed t)))
               (setq pos (1+ pos)))
             (font-lock-prepend-text-property start pos 'face 'font-lock-string-face)
+            (when header
+              (font-lock-prepend-text-property start pos 'face 'bold))
             (dolist (escape escapes)
               (font-lock-prepend-text-property
                escape (+ escape 2) 'face
                (if (facep 'font-lock-escape-face)
                    'font-lock-escape-face 'font-lock-string-face)))
             (setq pos (1- pos) field-start nil)))
-         (t (setq field-start nil))))
+         (t
+          (font-lock-prepend-text-property
+           pos (1+ pos) 'face 'font-lock-variable-name-face)
+          (when header
+            (font-lock-prepend-text-property pos (1+ pos) 'face 'bold))
+          (setq field-start nil))))
       (setq pos (1+ pos)))))
 
 (defvar carve--native-fontifying nil
