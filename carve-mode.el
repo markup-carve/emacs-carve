@@ -111,6 +111,7 @@ keeps the single `carve-code-face'."
     ("makefile" . makefile-gmake-mode) ("tex" . latex-mode)
     ("latex" . latex-mode) ("md" . markdown-mode)
     ("markdown" . markdown-mode) ("carve" . carve-mode) ("crv" . carve-mode)
+    ("csv" . carve-csv-mode) ("tsv" . carve-tsv-mode)
     ("math") ("text") ("txt") ("plain"))
   "Alist mapping a fence's language word to the major mode that fontifies it.
 The value is a mode, a list of modes (the first defined one wins), or nil
@@ -701,6 +702,45 @@ an indented fence at the top level is the cheaper error."
 
 ;;;; Native fontification of fence bodies
 
+(define-derived-mode carve-csv-mode fundamental-mode "Carve CSV")
+(define-derived-mode carve-tsv-mode fundamental-mode "Carve TSV")
+
+(defun carve--fontify-delimited-body (beg end separator)
+  "Fontify delimited fields from BEG to END using SEPARATOR."
+  (let ((pos beg)
+        (field-start t)
+        (delimiter-face (if (facep 'font-lock-delimiter-face)
+                            'font-lock-delimiter-face
+                          'font-lock-punctuation-face)))
+    (while (< pos end)
+      (let ((char (char-after pos)))
+        (cond
+         ((eq char separator)
+          (font-lock-prepend-text-property pos (1+ pos) 'face delimiter-face)
+          (setq field-start t))
+         ((eq char ?\n)
+          (setq field-start t))
+         ((and field-start (eq char ?\"))
+          (let ((start pos)
+                (escapes nil)
+                (closed nil))
+            (setq pos (1+ pos))
+            (while (and (< pos end) (not closed))
+              (when (eq (char-after pos) ?\")
+                (if (and (< (1+ pos) end) (eq (char-after (1+ pos)) ?\"))
+                    (progn (push pos escapes) (setq pos (1+ pos)))
+                  (setq closed t)))
+              (setq pos (1+ pos)))
+            (font-lock-prepend-text-property start pos 'face 'font-lock-string-face)
+            (dolist (escape escapes)
+              (font-lock-prepend-text-property
+               escape (+ escape 2) 'face
+               (if (facep 'font-lock-escape-face)
+                   'font-lock-escape-face 'font-lock-string-face)))
+            (setq pos (1- pos) field-start nil)))
+         (t (setq field-start nil))))
+      (setq pos (1+ pos)))))
+
 (defvar carve--native-fontifying nil
   "Non-nil while a fence body is being fontified in a temporary buffer.
 A carve fence inside that body keeps the plain code face, so a carve body
@@ -769,9 +809,13 @@ returns nil, so font-lock itself applies nothing."
              (lang (carve--fence-lang))
              (mode (and lang (carve--fence-lang-mode lang)))
              (buf (and mode
+                       (not (memq mode '(carve-csv-mode carve-tsv-mode)))
                        (not (and carve--native-fontifying
                                  (provided-mode-derived-p mode 'carve-mode)))
                        (carve--native-buffer mode))))
+        (when (memq mode '(carve-csv-mode carve-tsv-mode))
+          (carve--fontify-delimited-body
+           beg end (if (eq mode 'carve-csv-mode) ?, ?\t)))
         (when buf
           (let ((text (buffer-substring-no-properties beg end)))
             (condition-case nil
