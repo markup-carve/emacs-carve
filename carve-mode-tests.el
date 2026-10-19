@@ -273,6 +273,45 @@ marker - and a tab does not separate (markup-carve/carve#525)."
            (carve-test--face-at "{#intro .featured}\n# Title\n" "{#intro")
            'carve-attribute-face)))
 
+(ert-deftest carve-test-inline-attributes-require-a-glued-element ()
+  "Attribute faces follow only possible inline element closers."
+  (dolist (src '("[x]{.c}" "[x](u){.c}" "![a](i){.c}" "*b*{.c}"
+                 "/i/{.c}" "_u_{.c}" "~s~{.c}" "=h={.c}"
+                 "`c`{.c}" "{^s^}{.c}" "{,s,}{.c}"
+                 "<https://a.b>{.c}" ":sym:{.c}"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat src "\n") "{.c}")
+             'carve-attribute-face)))
+  (dolist (src '("word{.c}" "a {.c} b" "*b* {.c}" "{.c} x"
+                 "\"q\"{.c}" "[^1]{.c}"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat src "\n") "{.c}")
+                 'carve-attribute-face))))
+
+(ert-deftest carve-test-block-attributes-require-attached-position ()
+  "Attribute faces follow attached table rows, list markers, and containers."
+  (dolist (src '("| a | b |{.c}" "-{.c} item" "*{.c} item"
+                 "1.{.c} item" "1){.c} item" "a.{.c} item"
+                 ".{#x} attributed" "iv.{.c} item" "IV){.c} item"
+                 "  > -{.c} item" "> | a | b |{.c}  "
+                 "> {.c}\n> x" "> > {.c}  " "- {.c}\n  x"
+                 "- item\n  {.c}" "  {.c}"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat src "\n")
+                                  (if (string-match-p "{#x}" src) "{#x}" "{.c}"))
+             'carve-attribute-face)))
+  (dolist (src '("+{.c} item" ": {.c} def" "| a | b | {.c}"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat src "\n") "{.c}")
+                 'carve-attribute-face))))
+
+(ert-deftest carve-test-inline-attribute-known-closer-gaps ()
+  "A preceding closer alone also accepts these text cases."
+  (dolist (src '("f(u){.c}" "$`x`{.c}" "x\\*{.c}"))
+    (should (carve-test--face-includes
+             (carve-test--face-at (concat src "\n") "{.c}")
+             'carve-attribute-face))))
+
 (ert-deftest carve-test-table-header ()
   "A `|=' table header marker is fontified with the table face."
   (should (carve-test--face-includes

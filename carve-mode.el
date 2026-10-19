@@ -1297,6 +1297,49 @@ and a `]' must follow on the same line."
 
 ;;;; Font-lock keywords
 
+(defconst carve--inline-attribute-re
+  (let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
+                                      (zero-or-more
+                                       (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
+    (rx-to-string
+     `(group "{" (or (seq (any ".#") (any "a-zA-Z_")
+                          (zero-or-more (not (any "}{\n"))))
+                     (seq ,lang-item
+                          (opt (seq (one-or-more (any " \t"))
+                                    (one-or-more (not (any "}{\n")))))))
+             "}")))
+  "Regexp for an inline attribute block with a strict identifier start.")
+
+(defun carve--fontify-inline-attribute (limit)
+  "Find an inline attribute block glued to a possible inline element before LIMIT."
+  (catch 'found
+    (while (re-search-forward carve--inline-attribute-re limit t)
+      (let* ((beg (match-beginning 1))
+             (end (match-end 1))
+             (prefix (buffer-substring-no-properties (line-beginning-position) beg))
+             (suffix (buffer-substring-no-properties end (line-end-position)))
+             (bare (replace-regexp-in-string
+                    "\\`[ \t]*\\(?:>[ \t]*\\)*" "" prefix))
+             (marker "\\(?:[-*.]\\|[0-9]\\{1,9\\}[.)]\\|[a-zA-Z][.)]\\|[ivxlcdmIVXLCDM]+[.)]\\)"))
+        (when (and (or (memq (char-before beg) '(?\] ?\) ?* ?/ ?_ ?~ ?= ?` ?\} ?> ?:))
+                       (and (eq (char-before beg) ?|)
+                            (string-match-p "\\`|" bare)
+                            (string-match-p "\\`[ \t]*\\'" suffix))
+                       (string-match-p (concat "\\`" marker "\\'") bare)
+                       (and (string-match-p "\\`[ \t]*\\'" suffix)
+                            (or (and (string-match-p ">" prefix)
+                                     (string-empty-p bare))
+                                (string-match-p
+                                 (concat "\\`" marker "[ \t]+\\'") bare))))
+                   (not (and (eq (char-before beg) ?\])
+                             (save-match-data
+                               (save-excursion
+                                 (goto-char beg)
+                                 (and (re-search-backward "\\[\\^[^]\n]*\\]" (line-beginning-position) t)
+                                      (= (match-end 0) beg)))))))
+          (throw 'found t))))
+    nil))
+
 (defconst carve-font-lock-keywords
   `(
     ;; Code block, raw block, math block.
@@ -1927,16 +1970,7 @@ and a `]' must follow on the same line."
     ;; the way it is on the attribute LINE above.  Without it `{##}' read as an
     ;; id of `#': an EMPTY BRACE PAIR IS TEXT (markup-carve/carve#1447), and
     ;; this rule was the last one still claiming one.
-    (,(let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
-                                           (zero-or-more
-                                            (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
-        (rx-to-string
-         `(group "{" (or (seq (any ".#") (any "a-zA-Z_")
-                              (zero-or-more (not (any "}{\n"))))
-                         (seq ,lang-item
-                              (opt (seq (one-or-more (any " \t"))
-                                        (one-or-more (not (any "}{\n")))))))
-                 "}")))
+    (carve--fontify-inline-attribute
      (1 'carve-attribute-face))
 
     ;; Bold italic: the combined `/*...*/' opener.
