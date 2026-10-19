@@ -85,11 +85,14 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
     (search-forward search)
     (get-text-property (match-beginning 0) 'syntax-table)))
 
+(defconst carve-test--separator-face 'font-lock-keyword-face
+  "Face a csv/tsv separator always carries, so it is colored by default.")
+
 (ert-deftest carve-test-delimited-fences ()
   (let ((csv "```csv\nPlan,Seats,Price per month\nStarter,1,\"$0\"\nTeam,10,\"$49, billed yearly\"\n```\n")
         (tsv "```tsv\nname\tprice, usd\n\"a\tb\"\t7\n```\n"))
     (should (carve-test--face-includes (carve-test--face-at csv ",Seats")
-                                      'font-lock-delimiter-face))
+                                      carve-test--separator-face))
     (should (carve-test--face-includes (carve-test--face-at csv "\"$0\"")
                                       'font-lock-string-face))
     (should (carve-test--face-includes
@@ -97,15 +100,15 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
              'font-lock-string-face))
     (should-not (carve-test--face-includes
                  (carve-test--face-at csv ", billed")
-                 'font-lock-delimiter-face))
+                 carve-test--separator-face))
     (should (carve-test--face-includes (carve-test--face-at tsv "\tprice")
-                                      'font-lock-delimiter-face))
+                                      carve-test--separator-face))
     (should-not (carve-test--face-includes
-                 (carve-test--face-at tsv ", usd") 'font-lock-delimiter-face))
+                 (carve-test--face-at tsv ", usd") carve-test--separator-face))
     (should (carve-test--face-includes (carve-test--face-at tsv "\"a\tb\"")
                                       'font-lock-string-face))
     (should-not (carve-test--face-includes
-                 (carve-test--face-at tsv "\tb\"") 'font-lock-delimiter-face))))
+                 (carve-test--face-at tsv "\tb\"") carve-test--separator-face))))
 
 ;; Every non-separator character of a csv/tsv body carries a value face.
 (ert-deftest carve-test-delimited-fence-fields-all-typed ()
