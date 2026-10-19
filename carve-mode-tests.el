@@ -85,6 +85,41 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
     (search-forward search)
     (get-text-property (match-beginning 0) 'syntax-table)))
 
+(ert-deftest carve-test-delimited-fences ()
+  (let ((csv "```csv\nPlan,Seats,Price per month\nStarter,1,\"$0\"\nTeam,10,\"$49, billed yearly\"\n```\n")
+        (tsv "```tsv\nname\tprice, usd\n\"a\tb\"\t7\n```\n"))
+    (should (carve-test--face-includes (carve-test--face-at csv ",Seats")
+                                      'font-lock-delimiter-face))
+    (should (carve-test--face-includes (carve-test--face-at csv "\"$0\"")
+                                      'font-lock-string-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at csv "\"$49, billed yearly\"")
+             'font-lock-string-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at csv ", billed")
+                 'font-lock-delimiter-face))
+    (should (carve-test--face-includes (carve-test--face-at tsv "\tprice")
+                                      'font-lock-delimiter-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at tsv ", usd") 'font-lock-delimiter-face))
+    (should (carve-test--face-includes (carve-test--face-at tsv "\"a\tb\"")
+                                      'font-lock-string-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at tsv "\tb\"") 'font-lock-delimiter-face))))
+
+(ert-deftest carve-test-delimited-fence-quoted-records ()
+  (let ((csv "```csv\n\"first\nsecond\",next\na\"b,plain\n\"a\"\"b\"extra,tail\n\"open\nlast"))
+    (should (carve-test--face-includes
+             (carve-test--face-at csv "second") 'font-lock-string-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at csv "\"\"b") 'font-lock-escape-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at csv "\"b,plain") 'font-lock-string-face))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at csv "extra") 'font-lock-string-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at csv "last") 'font-lock-string-face))))
+
 (ert-deftest carve-test-heading ()
   "An ATX heading's text is fontified with the heading face."
   (should (carve-test--face-includes

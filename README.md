@@ -122,6 +122,8 @@ which inherit sensible defaults from the standard font-lock faces.
 Fence bodies are fontified natively: the body is highlighted in a scratch
 buffer with the major mode its info string names, and those faces are layered
 over `carve-code-face`. A ` ```carve ` body gets Carve's own highlighting.
+CSV and TSV fences highlight separators, quoted fields, and doubled quotes
+without requiring an installed CSV mode.
 
 - Set `carve-fontify-code-blocks-natively` (default `t`) to nil to leave
   every body in the single code face.
