@@ -710,9 +710,12 @@ an indented fence at the top level is the cheaper error."
   (let ((pos beg)
         (field-start t)
         (header t)
-        (delimiter-face (if (facep 'font-lock-delimiter-face)
-                            'font-lock-delimiter-face
-                          'font-lock-punctuation-face)))
+        ;; Emacs 29's operator face is unstyled by default, so the keyword
+        ;; face underneath keeps the separator visible; a theme that styles
+        ;; the operator face still wins.
+        (delimiter-face (if (facep 'font-lock-operator-face)
+                            '(font-lock-operator-face font-lock-keyword-face)
+                          'font-lock-keyword-face)))
     (while (< pos end)
       (let ((char (char-after pos)))
         (cond
