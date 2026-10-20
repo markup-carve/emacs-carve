@@ -1218,6 +1218,17 @@ sits at, and opens no item of its own - so an unpainted one reads as prose."
            (carve-test--face-at "> quoted\n+\n> attached\n" "+")
            'carve-markup-face)))
 
+(ert-deftest carve-test-continuation-marker-column ()
+  "Only column 0 or the spot right after a block opener makes a marker."
+  (dolist (text '("para\n\n+\n" "> +\n" "> > +\n" "- +\n" "1. +\n"
+                  ": +\n" "[^a]: +\n" "- - +\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at text "+") 'carve-markup-face)))
+  (dolist (text '("para\n\n  +\n" "- item\n  +\n  block\n"
+                  "```\n+\n```\n" "```\n  +\n```\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at text "+") 'carve-markup-face))))
+
 (ert-deftest carve-test-table-continuation-row ()
   "`+ cell | \' merges into the cell above, so its marker is table punctuation.
 It used to take the list-marker face, from a bullet rule that wrongly counted

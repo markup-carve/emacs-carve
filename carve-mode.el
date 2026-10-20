@@ -1661,7 +1661,7 @@ and a `]' must follow on the same line."
         limit))
      (1 'carve-list-marker-face))
 
-    ;; The CONTINUATION MARKER: a lone `+' on its own line.
+    ;; The CONTINUATION MARKER: a lone `+' at column 0, or right after a block opener.
     ;;
     ;; `continuation_marker = '+', newline` - any character between the `+' and
     ;; the line end is content, so the marker is the whole line or it is not a
@@ -1669,7 +1669,15 @@ and a `]' must follow on the same line."
     ;; whose marker column it sits at: a list item, a block quote, a footnote
     ;; body or a definition description. It opens no item of its own, which is
     ;; why an unpainted one reads as ordinary prose rather than as a gap.
-    (,(rx line-start (zero-or-more (in " \t")) (group "+")
+    (,(rx line-start
+          (zero-or-more
+           (or (seq ">" (zero-or-more " "))
+               (seq (any "-*:") " " (zero-or-more " "))
+               (seq (one-or-more (any "0-9a-zA-Z")) (any ".)") " "
+                    (zero-or-more " "))
+               (seq "[^" (one-or-more (not (any "]\n"))) "]: "
+                    (zero-or-more " "))))
+          (group "+")
           (zero-or-more (in " \t")) line-end)
      (1 'carve-markup-face))
 
