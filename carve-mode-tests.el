@@ -1276,6 +1276,17 @@ marker column with a block at that column next, or right after a block opener."
                    ("- a\n  ```\n  +\n  x\n  ```\n" 3)))
     (should-not (carve-test--marker-at-line-p text line))))
 
+(ert-deftest carve-test-glued-quote-prefix-is-text ()
+  "A `>\=' needs a space after it: `>+\=', `>>+\=' and `>> +\=' open no quote.
+In `> >+\=' only the first `>\=' is a quote prefix (markup-carve/carve#3421)."
+  (dolist (text '(">+\nq\n" ">>+\nq\n" ">> +\nq\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at text ">") 'carve-blockquote-face)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> >+\nq\n" ">") 'carve-blockquote-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> >+\nq\n" ">+") 'carve-blockquote-face)))
+
 (ert-deftest carve-test-continuation-marker-follows-the-next-line ()
   "Emptying the line below a `+\' refontifies the `+\', which then stays text."
   (with-temp-buffer
