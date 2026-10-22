@@ -1218,6 +1218,105 @@ sits at, and opens no item of its own - so an unpainted one reads as prose."
            (carve-test--face-at "> quoted\n+\n> attached\n" "+")
            'carve-markup-face)))
 
+(defun carve-test--marker-at-line-p (text line)
+  "Non-nil when the `+\' on LINE of TEXT has the continuation marker face."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (search-forward "+" (line-end-position))
+    (carve-test--face-includes (get-text-property (match-beginning 0) 'face)
+                               'carve-markup-face)))
+
+(ert-deftest carve-test-continuation-marker-attaches ()
+  "A lone `+\' is a marker only where it attaches the next block.
+Each row was read against carve-js main: the `+\' at an open container's
+marker column with a block at that column next, or right after a block opener."
+  (pcase-dolist (`(,text ,line)
+                 '(("- a\n+\nb\n" 2) ("- a\n  - b\n  +\n  c\n" 3)
+                   ("- a\n  - b\n+\npara\n" 3) ("  - a\n  +\n  b\n" 2)
+                   ("1. a\n+\nb\n" 2) ("- a\n\n+\nb\n" 3) ("- a\nlazy\n+\nb\n" 3)
+                   ("- a\n+\n> q\n" 2) ("- a\n+\n```\nx\n```\n" 2)
+                   ("> quoted\n+\n> attached\n" 2) ("> - a\n> +\n> para\n" 2)
+                   (":: t\n: a\n+\n- b\n" 3)
+                   ("[^a]: x\n+\n- b\n\ny[^a]\n" 2)
+                   ("> +\nflush\n" 1) ("> > +\nflush\n" 1)
+                   (":: t\nlazy\n: +\nflush\n" 3) ("> outer\n> > +\nflush\n" 2)
+                   ("- a\n  > +\npara\n" 2) ("- +\nflush\n" 1) ("- +\n" 1)
+                   ("1. +\nflush\n" 1) ("- [ ] +\nflush\n" 1) ("- > +\nflush\n" 1)
+                   ("- - +\nflush\n" 1) (":: t\n: +\nflush\n" 2)
+                   ("[^a]: +\nflush\n\nx[^a]\n" 1)))
+    (should (carve-test--marker-at-line-p text line))))
+
+(ert-deftest carve-test-continuation-marker-long-item ()
+  "An item longer than the first look-back window still owns its `+\'."
+  (let ((text (concat "- a\n" (apply #'concat (make-list 450 "  more\n"))
+                      "+\nnext\n")))
+    (should (carve-test--marker-at-line-p text 452))))
+
+(ert-deftest carve-test-continuation-marker-refused ()
+  "A lone `+\' that attaches nothing is text, like any other character."
+  (pcase-dolist (`(,text ,line)
+                 '(("- a\n  +\n  b\n" 2) ("- a\n    +\n    b\n" 2)
+                   ("- a\n  - b\n  +\npara\n" 3) ("- a\n  - b\n+\n  c\n" 3)
+                   ("- a\n+\n- b\n" 2) ("- a\n+\n1. b\n" 2) ("- a\n+\n" 2)
+                   ("- a\n+\n\nb\n" 2) ("text\n- a\n+\nb\n" 3) ("para\n+\nx\n" 2)
+                   ("para\n\n+\nb\n" 3) ("+\nx\n" 1) ("> a\n> +\n> b\n" 2)
+                   ("> +\n> x\n" 1) ("> +\n" 1) ("> +\n\nafter\n" 1)
+                   ("> a\n> +\nflush\n" 2) ("> > a\nlazy\n> > +\nz\n" 3)
+                   (">   +\n> para\n" 1) ("> - a\n> +\npara\n" 2) ("> +\n- c\n" 1)
+                   (":: t\n: a\n+\n" 3) (": +\nflush\n" 1)
+                   ("[^a]: +\n- x\n\ny[^a]\n" 1) ("[^a]: +\n  > q\n\nx[^a]\n" 1)
+                   ("[^a]: +\n\nsee[^a]\n" 1) (">+\nflush\n" 1) (">>+\nflush\n" 1) ("> >+\nflush\n" 1)
+                   (">> +\nflush\n" 1) ("> - a\n>+\n> para\n" 2)
+                   (":: t\n: +\n- a\n" 2) (":: t\n: +\n\nx\n" 2)
+                   ("```\n+\n```\n" 2)
+                   ("- a\n  ```\n  +\n  x\n  ```\n" 3)))
+    (should-not (carve-test--marker-at-line-p text line))))
+
+(ert-deftest carve-test-continuation-marker-follows-the-next-line ()
+  "Emptying the line below a `+\' refontifies the `+\', which then stays text."
+  (with-temp-buffer
+    (insert "- a\n+\nb\n")
+    (carve-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (forward-line 2)
+    (delete-region (point) (line-end-position))
+    (font-lock-fontify-region (point) (point-max))
+    (goto-char (point-min))
+    (search-forward "+")
+    (should-not (carve-test--face-includes
+                 (get-text-property (match-beginning 0) 'face) 'carve-markup-face))))
+
+(ert-deftest carve-test-description-cache-follows-narrowing ()
+  "A cached term verdict does not outlive a narrowing that hides the term."
+  (with-temp-buffer
+    (insert ":: t\n: a\n: d\n")
+    (carve-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (forward-line 1)
+    (narrow-to-region (point) (point-max))
+    (forward-line 1)
+    (should-not (carve--description-line-p))))
+
+(ert-deftest carve-test-description-needs-a-term ()
+  "A `:\' line is a description only below a term; otherwise it is text.
+A lazy colon line in a quote stays paragraph text (markup-carve/carve#3493)."
+  (dolist (text '(":: t\n: d\n" ":: t\n\n: d\n" ":: t\nlazy\n: d\n"
+                  "> :: t\n> : d\n" "- :: t\n  : d\n" "- a\n  :: t\n  : d\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at text ": d") 'carve-markup-face)))
+  (dolist (text '(": d\n" ": a\n: d\n" "::  \n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
+                  "> a\n: d\n" "> q\n> : d\n" "> :: t\n: d\n" "> - :: t\n> : d\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at text ": d") 'carve-markup-face)))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> :  d\n   :  b\n" ":  b") 'carve-markup-face)))
+
 (ert-deftest carve-test-table-continuation-row ()
   "`+ cell | \' merges into the cell above, so its marker is table punctuation.
 It used to take the list-marker face, from a bullet rule that wrongly counted
