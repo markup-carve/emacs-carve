@@ -1417,7 +1417,12 @@ and a `]' must follow on the same line."
   "A description, term or footnote line.")
 
 (defconst carve--cm-lookback 200
-  "How many lines above a lone `+' are read to find its container.")
+  "How many lines above a lone `+' are read first to find its container.
+A walk that runs off the top of that window reads twice as many, up to the
+start of the buffer.")
+
+(defvar carve--cm-hit-top nil
+  "Set when a walk ran off the top of the lines it was given.")
 
 (defun carve--cm-blank (s)
   "Non-nil when S holds only whitespace."
@@ -1475,13 +1480,16 @@ A marker glued to a `>' or a `+' counts, as in `>>' and `>+'."
       (when (>= (car (carve--cm-depth (aref lines j))) d)
         (setq first nil))
       (setq j (1- j)))
+    (when (< j 0) (setq carve--cm-hit-top t))
     first))
 
 (defun carve--cm-term-above-p (lines j d c)
   "Non-nil when the `:' line J of LINES, D quotes deep, follows a term at C."
   (let ((k (1- j)) (lazy nil) (result 'walk))
     (while (eq result 'walk)
-      (let ((kc (and (>= k 0) (carve--cm-content (aref lines k) d))))
+      (let ((kc (if (< k 0)
+                    (progn (setq carve--cm-hit-top t) nil)
+                  (carve--cm-content (aref lines k) d))))
         (cond
          ((null kc) (setq result nil))
          ;; A blank line above a lazy line ends the term before it.
@@ -1509,7 +1517,9 @@ marker sits at column C, and NEXT starts a block at that column."
       (let ((sibling (string-match-p carve--cm-item-re nc))
             (j (1- i)) (lazy nil) (gap nil) (result 'walk))
         (while (eq result 'walk)
-          (let ((cc (and (>= j 0) (carve--cm-content (aref lines j) d))))
+          (let ((cc (if (< j 0)
+                        (progn (setq carve--cm-hit-top t) nil)
+                      (carve--cm-content (aref lines j) d))))
             (cond
              ((null cc) (setq result nil))
              ((carve--cm-blank cc) (setq gap t))
@@ -1580,16 +1590,29 @@ marker sits at column C, and NEXT starts a block at that column."
                                       (length chain)
                                     (+ (length lead) (length chain)))))))))))
 
-(defun carve--continuation-marker-p ()
-  "Non-nil when the lone `+' line at point is a continuation marker."
+(defun carve--cm-read-lines (fn below)
+  "Call FN with the lines above point's line, that line, and BELOW more.
+FN takes the line vector and the index of point's line.  The window grows
+while FN runs off its top and the buffer has more."
   (save-excursion
     (beginning-of-line)
-    (let* ((here (point))
-           (start (progn (forward-line (- carve--cm-lookback)) (point)))
-           (end (progn (goto-char here) (forward-line 1) (line-end-position)))
-           (lines (vconcat (split-string
-                            (buffer-substring-no-properties start end) "\n"))))
-      (carve--cm-classify lines (count-lines start here)))))
+    (let ((here (point))
+          (back carve--cm-lookback)
+          result done)
+      (while (not done)
+        (let* ((start (progn (goto-char here) (forward-line (- back)) (point)))
+               (end (progn (goto-char here) (forward-line below) (line-end-position)))
+               (lines (vconcat (split-string
+                                (buffer-substring-no-properties start end) "\n"))))
+          (setq carve--cm-hit-top nil
+                result (funcall fn lines (count-lines start here))
+                done (or (not carve--cm-hit-top) (= start (point-min)))
+                back (* 2 back))))
+      result)))
+
+(defun carve--continuation-marker-p ()
+  "Non-nil when the lone `+' line at point is a continuation marker."
+  (carve--cm-read-lines #'carve--cm-classify 1))
 
 (defun carve--fontify-continuation-marker (limit)
   "Find the next continuation marker before LIMIT; group 1 is the `+'."
@@ -1607,18 +1630,12 @@ marker sits at column C, and NEXT starts a block at that column."
 (defun carve--description-line-p ()
   "Non-nil when the `:' line at point follows a term, as a description does.
 Without one the line is paragraph text, inside a quote or out of it."
-  (save-excursion
-    (beginning-of-line)
-    (let* ((here (point))
-           (start (progn (forward-line (- carve--cm-lookback)) (point)))
-           (lines (vconcat (split-string
-                            (buffer-substring-no-properties
-                             start (progn (goto-char here) (line-end-position)))
-                            "\n")))
-           (i (count-lines start here))
-           (dc (carve--cm-depth (aref lines i))))
-      (or (string-match-p "\\`[ \t]*::" (cdr dc))
-          (carve--cm-term-above-p lines i (car dc) (carve--cm-ind (cdr dc)))))))
+  (carve--cm-read-lines
+   (lambda (lines i)
+     (let ((dc (carve--cm-depth (aref lines i))))
+       (or (string-match-p "\\`[ \t]*::" (cdr dc))
+           (carve--cm-term-above-p lines i (car dc) (carve--cm-ind (cdr dc))))))
+   0))
 
 (defun carve--fontify-description (re limit)
   "Search for RE before LIMIT where a `::' or `:' line opens a term or description."

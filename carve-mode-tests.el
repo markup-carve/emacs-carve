@@ -1250,6 +1250,12 @@ marker column with a block at that column next, or right after a block opener."
                    ("[^a]: +\nflush\n\nx[^a]\n" 1)))
     (should (carve-test--marker-at-line-p text line))))
 
+(ert-deftest carve-test-continuation-marker-long-item ()
+  "An item longer than the first look-back window still owns its `+\'."
+  (let ((text (concat "- a\n" (apply #'concat (make-list 450 "  more\n"))
+                      "+\nnext\n")))
+    (should (carve-test--marker-at-line-p text 452))))
+
 (ert-deftest carve-test-continuation-marker-refused ()
   "A lone `+\' that attaches nothing is text, like any other character."
   (pcase-dolist (`(,text ,line)
