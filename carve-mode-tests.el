@@ -1291,6 +1291,18 @@ marker column with a block at that column next, or right after a block opener."
     (should-not (carve-test--face-includes
                  (get-text-property (match-beginning 0) 'face) 'carve-markup-face))))
 
+(ert-deftest carve-test-description-cache-follows-narrowing ()
+  "A cached term verdict does not outlive a narrowing that hides the term."
+  (with-temp-buffer
+    (insert ":: t\n: a\n: d\n")
+    (carve-mode)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (forward-line 1)
+    (narrow-to-region (point) (point-max))
+    (forward-line 1)
+    (should-not (carve--description-line-p))))
+
 (ert-deftest carve-test-description-needs-a-term ()
   "A `:\' line is a description only below a term; otherwise it is text.
 A lazy colon line in a quote stays paragraph text (markup-carve/carve#3493)."
@@ -1298,7 +1310,7 @@ A lazy colon line in a quote stays paragraph text (markup-carve/carve#3493)."
                   "> :: t\n> : d\n" "- :: t\n  : d\n" "- a\n  :: t\n  : d\n"))
     (should (carve-test--face-includes
              (carve-test--face-at text ": d") 'carve-markup-face)))
-  (dolist (text '(": d\n" ": a\n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
+  (dolist (text '(": d\n" ": a\n: d\n" "::  \n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
                   "> a\n: d\n" "> q\n> : d\n" "> :: t\n: d\n" "> - :: t\n> : d\n"))
     (should-not (carve-test--face-includes
                  (carve-test--face-at text ": d") 'carve-markup-face)))

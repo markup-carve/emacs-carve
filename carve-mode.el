@@ -1428,15 +1428,16 @@ start of the buffer.")
   "Buffer position of each line in the vector a walk was given.")
 
 (defvar-local carve--cm-cache nil
-  "(TICK . TABLE): walk verdicts by the `+' line a walk passed, and its state.
+  "(KEY . TABLE): walk verdicts by the `+' line a walk passed, and its state.
 A walk upward from a `+' that reaches an earlier `+' at the same column has
 the same verdict as a walk from there in the same state, so a long item with
 many markers is read once instead of once per marker.")
 
 (defun carve--cm-cache-table ()
   "The walk cache for the buffer as it is now."
-  (let ((tick (buffer-chars-modified-tick)))
-    (unless (eq (car carve--cm-cache) tick)
+  ;; Narrowing hides lines a walk reads, so it is part of the key too.
+  (let ((tick (list (buffer-chars-modified-tick) (point-min) (point-max))))
+    (unless (equal (car carve--cm-cache) tick)
       (setq carve--cm-cache (cons tick (make-hash-table :test #'equal))))
     (cdr carve--cm-cache)))
 
@@ -1518,7 +1519,7 @@ is reused from the walk cache."
                       "\\`[ \t]*\\(?:\\(?:[-*]\\|[0-9]+[.)]\\|[A-Za-z][.)]\\) +\\)+\\(::\\) "
                       kc)
                      (= (match-beginning 1) c))))
-         ((string-match-p "\\`[ \t]*:: " kc) (setq result t))
+         ((string-match-p "\\`[ \t]*:: +[^ \t]" kc) (setq result t))
          ;; An earlier description answers for the run above it.
          ((string-match-p "\\`[ \t]*: " kc)
           (setq lazy nil)
