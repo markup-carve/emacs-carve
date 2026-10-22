@@ -1410,7 +1410,7 @@ and a `]' must follow on the same line."
 (defconst carve--cm-opener-re
   (concat "\\`\\(?:[-*] +\\(?:\\[[] xX_>?-]\\] +\\)?"
           "\\|\\(?:[0-9]+[.)]\\|[A-Za-z][.)]\\|[ivxlcdmIVXLCDM]+[.)]\\|\\.\\) +"
-          "\\|: +\\|\\[\\^[^]\n]+\\]: +\\|> ?\\)")
+          "\\|: +\\|\\[\\^[^]\n]+\\]: +\\|> \\)")
   "One block opener in front of a first-block `+'.")
 
 (defconst carve--cm-def-re "\\`[ \t]*\\(?:::? \\|\\[\\^[^]\n]+\\]: \\)"
@@ -1423,6 +1423,22 @@ start of the buffer.")
 
 (defvar carve--cm-hit-top nil
   "Set when a walk ran off the top of the lines it was given.")
+
+(defvar carve--cm-offsets nil
+  "Buffer position of each line in the vector a walk was given.")
+
+(defvar-local carve--cm-cache nil
+  "(TICK . TABLE): walk verdicts by the `+' line a walk passed, and its state.
+A walk upward from a `+' that reaches an earlier `+' at the same column has
+the same verdict as a walk from there in the same state, so a long item with
+many markers is read once instead of once per marker.")
+
+(defun carve--cm-cache-table ()
+  "The walk cache for the buffer as it is now."
+  (let ((tick (buffer-chars-modified-tick)))
+    (unless (eq (car carve--cm-cache) tick)
+      (setq carve--cm-cache (cons tick (make-hash-table :test #'equal))))
+    (cdr carve--cm-cache)))
 
 (defun carve--cm-blank (s)
   "Non-nil when S holds only whitespace."
@@ -1442,16 +1458,12 @@ start of the buffer.")
 
 (defun carve--cm-strip (s n)
   "Strip N quote markers from S; nil when it has fewer.
-A marker glued to a `>' or a `+' counts, as in `>>' and `>+'."
+A marker takes its space or ends the line: `>>' and `>+' are no markers."
   (catch 'short
     (dotimes (_ n)
-      (unless (string-match "\\`[ \t]*>" s)
-        (throw 'short nil))
-      (setq s (substring s (match-end 0)))
-      (cond
-       ((string-prefix-p " " s) (setq s (substring s 1)))
-       ((or (string-empty-p s) (memq (aref s 0) '(?> ?+))))
-       (t (throw 'short nil))))
+      (if (string-match "\\`[ \t]*>\\(?: \\|\\'\\)" s)
+          (setq s (substring s (match-end 0)))
+        (throw 'short nil)))
     s))
 
 (defun carve--cm-content (line d)
@@ -1484,8 +1496,12 @@ A marker glued to a `>' or a `+' counts, as in `>>' and `>+'."
     first))
 
 (defun carve--cm-term-above-p (lines j d c)
-  "Non-nil when the `:' line J of LINES, D quotes deep, follows a term at C."
-  (let ((k (1- j)) (lazy nil) (result 'walk))
+  "Non-nil when the `:' line J of LINES, D quotes deep, follows a term at C.
+An earlier description at C has the same answer as this line, so its verdict
+is reused from the walk cache."
+  (let ((k (1- j)) (lazy nil) (result 'walk)
+        (table (and carve--cm-offsets (carve--cm-cache-table)))
+        passed)
     (while (eq result 'walk)
       (let ((kc (if (< k 0)
                     (progn (setq carve--cm-hit-top t) nil)
@@ -1499,13 +1515,24 @@ A marker glued to a `>' or a `+' counts, as in `>>' and `>+'."
           ;; A term opened inside a list item: `- :: t'.
           (setq result
                 (and (string-match
-                      "\\`[ \t]*\\(?:\\(?:[-*]\\|[0-9]+[.)]\\|[A-Za-z][.)]\\) +\\)+\\(::?\\) "
+                      "\\`[ \t]*\\(?:\\(?:[-*]\\|[0-9]+[.)]\\|[A-Za-z][.)]\\) +\\)+\\(::\\) "
                       kc)
                      (= (match-beginning 1) c))))
-         ((string-match-p "\\`[ \t]*::? " kc) (setq result t))
+         ((string-match-p "\\`[ \t]*:: " kc) (setq result t))
+         ;; An earlier description answers for the run above it.
+         ((string-match-p "\\`[ \t]*: " kc)
+          (setq lazy nil)
+          (when table
+            (let* ((key (list 'term (aref carve--cm-offsets k) d c))
+                   (hit (gethash key table 'none)))
+              (if (eq hit 'none)
+                  (push key passed)
+                (setq result hit)))))
          ((string-match-p carve--cm-item-re kc) (setq result nil))
          (t (setq lazy t)))
         (setq k (1- k))))
+    (unless carve--cm-hit-top
+      (dolist (key passed) (puthash key result table)))
     result))
 
 (defun carve--cm-relative (lines i next d c)
@@ -1514,8 +1541,10 @@ The container is the nearest open item, description, footnote or quote whose
 marker sits at column C, and NEXT starts a block at that column."
   (let ((nc (and next (carve--cm-content next d))))
     (when (and nc (not (carve--cm-blank nc)) (= (carve--cm-ind nc) c))
-      (let ((sibling (string-match-p carve--cm-item-re nc))
-            (j (1- i)) (lazy nil) (gap nil) (result 'walk))
+      (let ((sibling (and (string-match-p carve--cm-item-re nc) t))
+            (j (1- i)) (lazy nil) (gap nil) (result 'walk)
+            (table (and carve--cm-offsets (carve--cm-cache-table)))
+            passed)
         (while (eq result 'walk)
           (let ((cc (if (< j 0)
                         (progn (setq carve--cm-hit-top t) nil)
@@ -1525,7 +1554,13 @@ marker sits at column C, and NEXT starts a block at that column."
              ((carve--cm-blank cc) (setq gap t))
              ((> (carve--cm-ind cc) c))
              ((< (carve--cm-ind cc) c) (setq result nil))
-             ((string-match-p "\\`[ \t]*\\+[ \t]*\\'" cc))
+             ((string-match-p "\\`[ \t]*\\+[ \t]*\\'" cc)
+              (when table
+                (let* ((key (list (aref carve--cm-offsets j) d c lazy gap sibling))
+                       (hit (gethash key table 'none)))
+                  (if (eq hit 'none)
+                      (push key passed)
+                    (setq result hit)))))
              ((string-match-p "\\`[ \t]*>\\(?: \\|\\'\\)" cc) (setq result (not gap)))
              ((string-match-p carve--cm-item-re cc)
               ;; A list item next is a sibling, which ends the item instead.
@@ -1542,6 +1577,8 @@ marker sits at column C, and NEXT starts a block at that column."
              ((and (> j 0) (carve--cm-blank (aref lines (1- j)))) (setq result nil))
              (t (setq lazy t)))
             (setq j (1- j))))
+        (unless carve--cm-hit-top
+          (dolist (key passed) (puthash key result table)))
         result))))
 
 (defun carve--cm-classify (lines i)
@@ -1549,7 +1586,7 @@ marker sits at column C, and NEXT starts a block at that column."
   (let ((line (aref lines i))
         (next (and (< (1+ i) (length lines)) (aref lines (1+ i)))))
     (when (string-match
-           "\\`\\([ \t]*\\)\\(\\(?:> ?\\)*\\)\\(.*?\\)\\+[ \t]*\\'" line)
+           "\\`\\([ \t]*\\)\\(\\(?:> \\)*\\)\\(.*?\\)\\+[ \t]*\\'" line)
       (let* ((lead (match-string 1 line))
              (q (match-string 2 line))
              (chain (match-string 3 line))
@@ -1573,8 +1610,9 @@ marker sits at column C, and NEXT starts a block at that column."
                    (= (carve--cm-ind next) 0)
                    (not (string-match-p carve--cm-item-re next))))
              ((string-prefix-p ":" k)
-              (and (> i 0)
-                   (string-match-p "\\`[ \t]*\\(?:> ?\\)*::? " (aref lines (1- i)))))
+              (and (carve--cm-term-above-p lines i d (carve--cm-ind (cdr (carve--cm-depth line))))
+                   next (not (carve--cm-blank next))
+                   (not (string-match-p carve--cm-item-re next))))
              ((string-match-p "\\`\\(?:>\\|\\[\\^\\|:\\)" (car toks)) t)
              ;; A list item cannot interrupt a paragraph.
              (t (not (carve--cm-paragraph-p
@@ -1603,7 +1641,11 @@ while FN runs off its top and the buffer has more."
         (let* ((start (progn (goto-char here) (forward-line (- back)) (point)))
                (end (progn (goto-char here) (forward-line below) (line-end-position)))
                (lines (vconcat (split-string
-                                (buffer-substring-no-properties start end) "\n"))))
+                                (buffer-substring-no-properties start end) "\n")))
+               (pos start)
+               (carve--cm-offsets
+                (vconcat (mapcar (lambda (l) (prog1 pos (setq pos (+ pos (length l) 1))))
+                                 lines))))
           (setq carve--cm-hit-top nil
                 result (funcall fn lines (count-lines start here))
                 done (or (not carve--cm-hit-top) (= start (point-min)))

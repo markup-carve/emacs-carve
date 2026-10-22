@@ -1240,10 +1240,10 @@ marker column with a block at that column next, or right after a block opener."
                    ("1. a\n+\nb\n" 2) ("- a\n\n+\nb\n" 3) ("- a\nlazy\n+\nb\n" 3)
                    ("- a\n+\n> q\n" 2) ("- a\n+\n```\nx\n```\n" 2)
                    ("> quoted\n+\n> attached\n" 2) ("> - a\n> +\n> para\n" 2)
-                   ("> - a\n>+\n> para\n" 2) (":: t\n: a\n+\n- b\n" 3)
+                   (":: t\n: a\n+\n- b\n" 3)
                    ("[^a]: x\n+\n- b\n\ny[^a]\n" 2)
-                   ("> +\nflush\n" 1) (">+\nflush\n" 1) ("> > +\nflush\n" 1)
-                   (">> +\nflush\n" 1) ("> outer\n> > +\nflush\n" 2)
+                   ("> +\nflush\n" 1) ("> > +\nflush\n" 1)
+                   (":: t\nlazy\n: +\nflush\n" 3) ("> outer\n> > +\nflush\n" 2)
                    ("- a\n  > +\npara\n" 2) ("- +\nflush\n" 1) ("- +\n" 1)
                    ("1. +\nflush\n" 1) ("- [ ] +\nflush\n" 1) ("- > +\nflush\n" 1)
                    ("- - +\nflush\n" 1) (":: t\n: +\nflush\n" 2)
@@ -1269,7 +1269,10 @@ marker column with a block at that column next, or right after a block opener."
                    (">   +\n> para\n" 1) ("> - a\n> +\npara\n" 2) ("> +\n- c\n" 1)
                    (":: t\n: a\n+\n" 3) (": +\nflush\n" 1)
                    ("[^a]: +\n- x\n\ny[^a]\n" 1) ("[^a]: +\n  > q\n\nx[^a]\n" 1)
-                   ("[^a]: +\n\nsee[^a]\n" 1) ("```\n+\n```\n" 2)
+                   ("[^a]: +\n\nsee[^a]\n" 1) (">+\nflush\n" 1) (">>+\nflush\n" 1) ("> >+\nflush\n" 1)
+                   (">> +\nflush\n" 1) ("> - a\n>+\n> para\n" 2)
+                   (":: t\n: +\n- a\n" 2) (":: t\n: +\n\nx\n" 2)
+                   ("```\n+\n```\n" 2)
                    ("- a\n  ```\n  +\n  x\n  ```\n" 3)))
     (should-not (carve-test--marker-at-line-p text line))))
 
@@ -1295,7 +1298,7 @@ A lazy colon line in a quote stays paragraph text (markup-carve/carve#3493)."
                   "> :: t\n> : d\n" "- :: t\n  : d\n" "- a\n  :: t\n  : d\n"))
     (should (carve-test--face-includes
              (carve-test--face-at text ": d") 'carve-markup-face)))
-  (dolist (text '(": d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
+  (dolist (text '(": d\n" ": a\n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
                   "> a\n: d\n" "> q\n> : d\n" "> :: t\n: d\n" "> - :: t\n> : d\n"))
     (should-not (carve-test--face-includes
                  (carve-test--face-at text ": d") 'carve-markup-face)))
