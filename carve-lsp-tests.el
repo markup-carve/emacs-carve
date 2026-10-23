@@ -16,8 +16,8 @@
 ;; makes; actually spawning a language server would make the suite depend on
 ;; npm.
 ;;
-;;   emacs -Q --batch -l ert -l carve-mode.el -l carve-lsp.el \
-;;     -l carve-lsp-tests.el -f ert-run-tests-batch-and-exit
+;;   `emacs -Q --batch -l ert -l carve-mode.el -l carve-lsp.el \
+;;     -l carve-lsp-tests.el -f ert-run-tests-batch-and-exit'
 
 ;;; Code:
 
@@ -38,7 +38,7 @@
         (setq carve-lsp-test--fake-dir dir))))
 
 (defmacro carve-lsp-test--with-server (&rest body)
-  "Run BODY with a fake `carve-lsp' on `exec-path'."
+  "Run BODY with a fake `carve-lsp' on the variable `exec-path'."
   (declare (indent 0))
   `(let* ((dir (carve-lsp-test--fake-server))
           (exec-path (cons dir exec-path))

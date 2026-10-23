@@ -2,7 +2,7 @@
 
 ;; Author: markup-carve
 ;; Maintainer: markup-carve
-;; Version: 0.1.8
+;; Version: 0.1.9
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve
@@ -30,7 +30,8 @@
 
 ;;; Commentary:
 
-;; Carve is a lightweight markup language for documents and the web (see https://github.com/markup-carve/carve).
+;; Carve is a lightweight markup language for documents and the web
+;; (see https://github.com/markup-carve/carve).
 ;; This package provides `carve-mode', a major mode that adds syntax
 ;; highlighting, a comment syntax, an imenu index of headings, outline support,
 ;; and an optional preview command for `.crv' files.
@@ -38,11 +39,11 @@
 ;; The font-lock rules cover the core Carve constructs: ATX headings, the
 ;; mnemonic inline emphasis family (`/italic/', `*bold*', `_underline_',
 ;; `~strike~', `=highlight=', and the brace forms, including superscript
-;; `{^...^}' and subscript `{,...,}'), inline literals, inline and raw inline code, links,
-;; autolinks, reference links and
-;; definitions, images, cross-references, lists (bullet, ordered, task),
-;; definition lists, blockquotes, caption lines, fenced and raw code blocks,
-;; `%%' and `{%..%}' comments, fenced divs and admonitions, block-attribute lines, tables,
+;; `{^...^}' and subscript `{,...,}'), inline literals, inline and raw inline
+;; code, links, autolinks, reference links and definitions, images,
+;; cross-references, lists (bullet, ordered, task), definition lists,
+;; blockquotes, caption lines, fenced and raw code blocks, `%%' and `{%..%}'
+;; comments, fenced divs and admonitions, block-attribute lines, tables,
 ;; footnotes, math, frontmatter, mentions, tags, and CriticMarkup.
 ;;
 ;; Carve is a young language; some constructs (notably the word-boundary rules
@@ -59,6 +60,7 @@
 
 (require 'rx)
 (require 'seq)
+(require 'subr-x)
 
 (defgroup carve nil
   "Major mode for editing Carve markup."
@@ -126,7 +128,7 @@ to `js-ts-mode' there applies to fences too."
 ;;;; Faces
 
 (defface carve-heading-face
-  '((t :inherit font-lock-function-name-face :weight bold))
+  '((t :inherit (font-lock-function-name-face bold)))
   "Face for Carve ATX headings."
   :group 'carve)
 
@@ -171,7 +173,7 @@ to `js-ts-mode' there applies to fences too."
   :group 'carve)
 
 (defface carve-url-face
-  '((t :inherit link :underline t))
+  '((t :inherit link))
   "Face for link URLs, autolinks, and cross-references."
   :group 'carve)
 
@@ -196,12 +198,12 @@ to `js-ts-mode' there applies to fences too."
   :group 'carve)
 
 (defface carve-admonition-face
-  '((t :inherit font-lock-keyword-face :weight bold))
+  '((t :inherit (font-lock-keyword-face bold)))
   "Face for `:::' div and admonition fences."
   :group 'carve)
 
 (defface carve-figure-group-face
-  '((t :inherit font-lock-function-name-face :weight bold))
+  '((t :inherit (font-lock-function-name-face bold)))
   "Face for a bare `::: figure' composite-figure opener.
 A composite figure is a different construct from the generic container
 `carve-admonition-face' marks, not a flavor of it (PART 9 §4c), so it takes
@@ -221,7 +223,7 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   :group 'carve)
 
 (defface carve-math-face
-  '((t :inherit font-lock-constant-face :slant italic))
+  '((t :inherit (font-lock-constant-face italic)))
   "Face for inline and display math."
   :group 'carve)
 
@@ -305,12 +307,12 @@ the region that matcher paints, and two spellings of one rule drift.")
 ;; above to answer that, the way the engine does.
 
 (defconst carve--list-marker-re
-  (rx (or (any "-*")
-          (seq (or (one-or-more digit) (one-or-more (any "ivxlcdmIVXLCDM"))
-                   (any "a-zA-Z"))
-               (any ".)"))
+  (rx (or (in "-*")
+          (seq (or (one-or-more digit) (one-or-more (in "ivxlcdmIVXLCDM"))
+                   (in "a-zA-Z"))
+               (in ".)"))
           ".")
-      (opt "{" (zero-or-more (not (any "}\n"))) "}"))
+      (opt "{" (zero-or-more (not (in "}\n"))) "}"))
   "A list marker, with an optional glued attribute block (`-{.c} item').")
 
 (defconst carve--quote-prefix-re
@@ -323,17 +325,17 @@ the region that matcher paints, and two spellings of one rule drift.")
   "A line opening with a list marker and content.")
 
 (defconst carve--block-line-re
-  (rx (or (seq (** 1 6 ?#) (one-or-more " ") (not (any " \t\n")))
+  (rx (or (seq (** 1 6 ?#) (one-or-more " ") (not (in " \t\n")))
           (seq (zero-or-more (in " \t"))
                (or (seq ">" (or " " line-end))
                    (>= 3 ?`) (>= 3 ?~)
                    (>= 3 ?:)
-                   (seq "::" (one-or-more " ") (not (any " \t\n")))
+                   (seq "::" (one-or-more " ") (not (in " \t\n")))
                    (seq "|" (zero-or-more not-newline) "|" (zero-or-more (in " \t")) line-end)
                    "%%"
                    (seq "{" (zero-or-more not-newline) "}" (zero-or-more (in " \t")) line-end)
                    (seq (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)) (zero-or-more (in " \t")) line-end)
-                   (seq (opt "*") "[" (opt "^") (one-or-more (not (any "]\n"))) "]: ")))))
+                   (seq (opt "*") "[" (opt "^") (one-or-more (not (in "]\n"))) "]: ")))))
   "A line opening a block that ends a paragraph.")
 
 (defun carve--line-kind ()
@@ -343,7 +345,7 @@ One of `blank', `block', `marker', `caption', `text' or `indented'."
    ((looking-at carve--blank-line-re) 'blank)
    ((looking-at carve--block-line-re) 'block)
    ((looking-at carve--marker-line-re) 'marker)
-   ((looking-at (rx (zero-or-more (in " \t")) "^" (one-or-more " ") (not (any " \t\n"))))
+   ((looking-at (rx (zero-or-more (in " \t")) "^" (one-or-more " ") (not (in " \t\n"))))
     'caption)
    ((looking-at (rx (in " \t"))) 'indented)
    (t 'text)))
@@ -410,8 +412,9 @@ quote the walk reads the lines behind the same markers."
           (seq "$$`" (zero-or-more not-newline))
           (>= 3 ?:))
       (zero-or-more (in " \t")) line-end)
-  "A line that ends a block taking a caption: a table row, a fence, a quote,
-an image or display math line, or a container fence.")
+  "Regexp for a line that ends a block taking a caption.
+That is a table row, a fence, a quote, an image or display math line, or a
+container fence.")
 
 (defun carve--fontify-caption (limit)
   "Search for a caption marker between point and LIMIT.
@@ -422,7 +425,7 @@ start of the document it is prose."
     (while (re-search-forward
             (rx line-start (zero-or-more (in " \t"))
                 (group "^") (one-or-more " ")
-                (not (any " \t\n")))
+                (not (in " \t\n")))
             limit t)
       (let ((data (match-data)))
         (when (save-excursion
@@ -568,11 +571,11 @@ term), is left alone.  A quoted paragraph is filled behind its markers."
   ;; MARKER REQUIRES CONTENT, and a RUN of spaces is not content: carve-rs
   ;; renders `#<space><space>' as `<p>#</p>'.  `one-or-more not-newline'
   ;; happily matched those spaces, so the separator was doing the content's
-  ;; job.  `(in " \t")' for the separator and `(not (any " \t\n"))' for the
+  ;; job.  `(in " \t")' for the separator and `(not (in " \t\n"))' for the
   ;; first content character - the newline in that set is what makes it bite.
   (rx line-start (zero-or-more (in " \t"))
       (group (** 1 6 ?#)) (group (one-or-more " "))
-      (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
+      (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
   "Match an ATX heading line (no trailing attribute blocks in Carve).")
 
 (defun carve--closing-fence (from limit char len column)
@@ -633,7 +636,7 @@ an indented fence at the top level is the cheaper error."
              (format-beg (save-excursion
                            (goto-char (+ opener-beg len))
                            (when (looking-at (rx (zero-or-more (in " \t"))
-                                                 "=" (one-or-more (any "a-zA-Z0-9_-"))))
+                                                 "=" (one-or-more (in "a-zA-Z0-9_-"))))
                              (skip-chars-forward " \t")
                              (point))))
              (format-end (and format-beg (match-end 0)))
@@ -801,8 +804,8 @@ The value is the symbol `failed' when MODE could not be set up.")
     (when (string-match (rx string-start (zero-or-more (in " \t"))
                             (or (>= 3 ?`) (>= 3 ?~))
                             (zero-or-more (in " \t")) (opt "=")
-                            (group (not (any " \t{=`~"))
-                                   (zero-or-more (not (any " \t{")))))
+                            (group (not (in " \t{=`~"))
+                                   (zero-or-more (not (in " \t{")))))
                         opener)
       (match-string 1 opener))))
 
@@ -885,7 +888,7 @@ than swallowing the rest of the buffer."
     nil))
 
 (defconst carve--hyphen-run-re
-  (rx (group (>= 2 "-")) (not (any "-")))
+  (rx (group (>= 2 "-")) (not (in "-")))
   "Match a run of two or more hyphens, bounded on the right.")
 
 (defun carve--fontify-hyphen-run (limit)
@@ -941,7 +944,7 @@ below search, and 5 the closing `}}'.
 
 THE CLOSER IS THE FIRST `}}' OUTSIDE A QUOTED RUN, and a quoted run may
 contain the pair (markup-carve/carve#2013).  This replaces a regexp whose
-tail was `(one-or-more (not (any \"}\" ?\\n)))': it could not span a `}' at
+tail was `(one-or-more (not (in \"}\" ?\\n)))': it could not span a `}' at
 all, so the directive ended at the first pair after the path and the
 option value's own rx, which does admit the pair, never got the chance -
 it is anchored INSIDE the tail those bounds produced.
@@ -1014,8 +1017,8 @@ third of the closer, and a payload that reached either seam was coloured as
 markup.
 
 AN UNPARTNERED RUN IS A SPAN TO THE END OF ITS PARAGRAPH.  The engine renders
-`a \\=`x *b* y\\=' as `a <code>x *b* y</code>\\=', and the rest of the line was left
-live here, so an emphasis run after an unclosed backtick coloured."
+`a \\=`x *b* y\\=' as `a <code>x *b* y</code>\\=', and the rest of the line
+was left live here, so an emphasis run after an unclosed backtick colored."
   (catch 'done
     (while (search-forward "`" limit t)
       (let* ((beg (1- (point)))
@@ -1082,8 +1085,9 @@ renders nothing came back bold."
 
 (defun carve--link-tail-end (pos limit)
   "Return the end of a `(dest)\\=' or `(dest \"title\")\\=' tail at POS, or nil.
-Parentheses balance to any depth; `\\\\(\\=', `\\\\)\\=' and `\\\\\\\\\\=' are the only
-destination escapes, and a title is one space away."
+Do not look past LIMIT.  Parentheses balance to any depth;
+`\\\\(\\=', `\\\\)\\=' and `\\\\\\\\\\=' are the only destination escapes, and a
+title is one space away."
   (save-excursion
     (goto-char pos)
     (when (eq (char-after) ?\()
@@ -1115,7 +1119,8 @@ destination escapes, and a title is one space away."
                (1+ (point))))))))
 
 (defun carve--link-end (pos limit)
-  "Return the end of an inline link or image starting at POS, or nil."
+  "Return the end of an inline link or image starting at POS, or nil.
+Do not look past LIMIT."
   (save-excursion
     (goto-char pos)
     (when (eq (char-after) ?!) (forward-char 1))
@@ -1150,11 +1155,12 @@ destination escapes, and a title is one space away."
                         '(Zs Zl Zp Cf)))))))
 
 (defun carve--autolink-end (pos limit)
-  "Return the end of a URL or email autolink starting at POS, or nil."
+  "Return the end of a URL or email autolink starting at POS, or nil.
+Do not look past LIMIT."
   (save-excursion
     (goto-char pos)
     (cond
-     ((looking-at (rx "<" (any "a-zA-Z") (zero-or-more (any "a-zA-Z0-9+.-")) ":"))
+     ((looking-at (rx "<" (in "a-zA-Z") (zero-or-more (in "a-zA-Z0-9+.-")) ":"))
       (goto-char (match-end 0))
       (let ((beg (point)))
         (while (and (< (point) limit) (carve--url-char-p (char-after))
@@ -1162,19 +1168,20 @@ destination escapes, and a title is one space away."
           (forward-char 1))
         (and (> (point) beg) (< (point) limit) (eq (char-after) ?>)
              (1+ (point)))))
-     ((looking-at (rx "<" (one-or-more (any alpha digit "._+-")) "@"
-                      (one-or-more (one-or-more (any alpha digit "_-")) ".")
+     ((looking-at (rx "<" (one-or-more (in alpha digit "._+-")) "@"
+                      (one-or-more (one-or-more (in alpha digit "_-")) ".")
                       (one-or-more alpha) ">"))
       (and (<= (match-end 0) limit) (match-end 0))))))
 
 (defun carve--opaque-end (pos limit)
-  "Return the end of a link, image or autolink starting at POS, or nil."
+  "Return the end of a link, image or autolink starting at POS, or nil.
+Do not look past LIMIT."
   (pcase (char-after pos)
     ((or ?\[ ?!) (carve--link-end pos limit))
     (?< (carve--autolink-end pos limit))))
 
 (defun carve--prefix-at-p (string pos end)
-  "Non-nil when STRING starts at POS and ends by END."
+  "Return non-nil when STRING begins at POS and ends by END."
   (and (<= (+ pos (length string)) end)
        (string= string (buffer-substring-no-properties pos (+ pos (length string))))))
 
@@ -1210,7 +1217,8 @@ computed once per buffer state rather than once per rule.")
     (memq face carve--emphasis-faces)))
 
 (defun carve--closer-at-p (close pos eol)
-  "Non-nil when CLOSE at POS closes a run: after a non-space, before no word."
+  "Return non-nil when CLOSE at POS closes a run.
+It must follow a non-space and precede no word, and fit before EOL."
   (and (carve--prefix-at-p close pos eol)
        (not (memq (char-before pos) '(?\s ?\t ?\n)))
        (let ((after (char-after (+ pos (length close)))))
@@ -1353,15 +1361,15 @@ and a `]' must follow on the same line."
 ;;;; Font-lock keywords
 
 (defconst carve--inline-attribute-re
-  (let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
+  (let ((lang-item '(seq ":" (opt (seq (repeat 1 8 (in "a-zA-Z0-9"))
                                       (zero-or-more
-                                       (seq "-" (repeat 1 8 (any "a-zA-Z0-9")))))))))
+                                       (seq "-" (repeat 1 8 (in "a-zA-Z0-9")))))))))
     (rx-to-string
-     `(group "{" (or (seq (any ".#") (any "a-zA-Z_")
-                          (zero-or-more (not (any "}{\n"))))
+     `(group "{" (or (seq (in ".#") (in "a-zA-Z_")
+                          (zero-or-more (not (in "}{\n"))))
                      (seq ,lang-item
-                          (opt (seq (one-or-more (any " \t"))
-                                    (one-or-more (not (any "}{\n")))))))
+                          (opt (seq (one-or-more (in " \t"))
+                                    (one-or-more (not (in "}{\n")))))))
              "}")))
   "Regexp for an inline attribute block with a strict identifier start.")
 
@@ -1442,7 +1450,7 @@ many markers is read once instead of once per marker.")
     (cdr carve--cm-cache)))
 
 (defun carve--cm-blank (s)
-  "Non-nil when S holds only whitespace."
+  "Return non-nil when S is only whitespace."
   (string-match-p "\\`[ \t]*\\'" s))
 
 (defun carve--cm-ind (s)
@@ -1550,7 +1558,8 @@ is reused from the walk cache."
     result))
 
 (defun carve--cm-relative (lines i next d c)
-  "Non-nil when a `+' at column C, D quotes deep, on line I attaches NEXT.
+  "Return non-nil when a `+' at column C, D quotes deep, on line I attaches NEXT.
+LINES is the vector of buffer lines that I indexes.
 The container is the nearest open item, description, footnote or quote whose
 marker sits at column C, and NEXT starts a block at that column."
   (let ((nc (and next (carve--cm-content next d))))
@@ -1755,20 +1764,20 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; key, and an identifier never starts with a digit.  Without that, any
     ;; braced span alone on a line -- a forced `{/a/b/}`, say -- was swallowed
     ;; here as an attribute block.
-    (,(let* ((ident '(seq (any "a-zA-Z_") (zero-or-more (any "a-zA-Z0-9_-"))))
-             (value '(or (seq "\"" (zero-or-more (not (any ?\"))) "\"")
-                         (seq "'" (zero-or-more (not (any ?'))) "'")
-                         (one-or-more (not (any " \t\"'{}")))))
+    (,(let* ((ident '(seq (in "a-zA-Z_") (zero-or-more (in "a-zA-Z0-9_-"))))
+             (value '(or (seq "\"" (zero-or-more (not (in ?\"))) "\"")
+                         (seq "'" (zero-or-more (not (in ?'))) "'")
+                         (one-or-more (not (in " \t\"'{}")))))
              ;; The language attribute (markup-carve/carve#1114): a colon, then
              ;; an optional tag of 1-8 alphanumeric subtags joined by hyphens.
              ;; It is the ONE item that opens with a colon, and the payload here
              ;; is validated as a whole, so an item the alternation does not know
              ;; leaves the entire line unfontified rather than losing one token.
-             (lang-item '(seq ":" (opt (seq (repeat 1 8 (any "a-zA-Z0-9"))
+             (lang-item '(seq ":" (opt (seq (repeat 1 8 (in "a-zA-Z0-9"))
                                             (zero-or-more
-                                             (seq "-" (repeat 1 8 (any "a-zA-Z0-9"))))))))
+                                             (seq "-" (repeat 1 8 (in "a-zA-Z0-9"))))))))
              (item `(or ,lang-item
-                        (seq (any ".#") ,ident)
+                        (seq (in ".#") ,ident)
                         (seq ,ident (opt "=" ,value)))))
         (rx-to-string
          `(seq line-start (zero-or-more space)
@@ -1865,7 +1874,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; Fenced divs and admonitions: ::: type "Title" [Label]
     (,(rx line-start (zero-or-more (in " \t")) (group (>= 3 ?:))
           (zero-or-more space)
-          (group (zero-or-more (any "a-zA-Z0-9_|")))
+          (group (zero-or-more (in "a-zA-Z0-9_|")))
           (zero-or-more not-newline) line-end)
      (1 'carve-admonition-face)
      (2 'carve-admonition-face))
@@ -1879,7 +1888,7 @@ Without one the line is paragraph text, inside a quote or out of it."
           (zero-or-more ">" " " (zero-or-more (in " \t")))
           (group "|" (zero-or-more not-newline) "|")
           (zero-or-more (in " \t")) line-end)
-     (,(rx (group "|" (opt "=") (opt (any "<>~"))))
+     (,(rx (group "|" (opt "=") (opt (in "<>~"))))
       (progn (goto-char (match-beginning 1)) (match-end 1))
       nil
       (1 'carve-table-face)))
@@ -1910,10 +1919,10 @@ Without one the line is paragraph text, inside a quote or out of it."
         ,(rx line-start (zero-or-more (in " \t"))
              (zero-or-more ">" " " (zero-or-more " "))
              (group (one-or-more
-                     (or (seq (any "-*") (one-or-more " ")
-                              (opt "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]" (one-or-more " ")))
-                         (seq (or (one-or-more digit) (any "a-zA-Z") (one-or-more (any "ivxlcdmIVXLCDM")))
-                              (any ".)") (one-or-more " "))
+                     (or (seq (in "-*") (one-or-more " ")
+                              (opt "[" (in ?\s ?x ?X ?_ ?- ?> ??) "]" (one-or-more " ")))
+                         (seq (or (one-or-more digit) (in "a-zA-Z") (one-or-more (in "ivxlcdmIVXLCDM")))
+                              (in ".)") (one-or-more " "))
                          (seq "." (one-or-more " "))))
                     (zero-or-more ">" " " (zero-or-more " "))
                     ">" (or " " line-end)))
@@ -1929,7 +1938,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx line-start (zero-or-more (in " \t"))
           (one-or-more ">" " " (zero-or-more (in " \t")))
           (group (** 1 6 ?#)) (one-or-more " ")
-          (group (not (any " \t\n")) (zero-or-more not-newline)) line-end)
+          (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
      (1 'carve-markup-face)
      (2 'carve-heading-face))
     ;; A `:' line is a description only below a term; a lazy or a lone one
@@ -1938,7 +1947,7 @@ Without one the line is paragraph text, inside a quote or out of it."
        (carve--fontify-description
         ,(rx line-start (zero-or-more (in " \t"))
              (one-or-more ">" " " (zero-or-more (in " \t")))
-             (group (or "::" ":")) (one-or-more " ") (not (any " \t\n")))
+             (group (or "::" ":")) (one-or-more " ") (not (in " \t\n")))
         limit))
      (1 'carve-markup-face))
     (,(rx line-start (zero-or-more (in " \t"))
@@ -1962,9 +1971,9 @@ Without one the line is paragraph text, inside a quote or out of it."
        (carve--fontify-list-marker
         ,(rx line-start (zero-or-more (in " \t"))
              (zero-or-more ">" " " (zero-or-more (in " \t")))
-             (group (any "-*")) (one-or-more " ")
-             (group "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]")
-             (one-or-more " ") (not (any " \t\n")))
+             (group (in "-*")) (one-or-more " ")
+             (group "[" (in ?\s ?x ?X ?_ ?- ?> ??) "]")
+             (one-or-more " ") (not (in " \t\n")))
         limit))
      (1 'carve-list-marker-face)
      (2 'carve-markup-face))
@@ -1981,11 +1990,11 @@ Without one the line is paragraph text, inside a quote or out of it."
         ,(rx line-start (zero-or-more (in " \t"))
              (zero-or-more ">" " " (zero-or-more (in " \t")))
              (group (or (seq (or (one-or-more digit)
-                                 (one-or-more (any "ivxlcdmIVXLCDM"))
-                                 (any "a-zA-Z"))
-                             (any ".)"))
+                                 (one-or-more (in "ivxlcdmIVXLCDM"))
+                                 (in "a-zA-Z"))
+                             (in ".)"))
                         "."))
-             (or (seq (one-or-more " ") (not (any " \t\n"))) "{"))
+             (or (seq (one-or-more " ") (not (in " \t\n"))) "{"))
         limit))
      (1 'carve-list-marker-face))
 
@@ -2000,8 +2009,8 @@ Without one the line is paragraph text, inside a quote or out of it."
        (carve--fontify-list-marker
         ,(rx line-start (zero-or-more (in " \t"))
              (zero-or-more ">" " " (zero-or-more (in " \t")))
-             (group (any "-*"))
-             (or (seq (one-or-more " ") (not (any " \t\n"))) "{"))
+             (group (in "-*"))
+             (or (seq (one-or-more " ") (not (in " \t\n"))) "{"))
         limit))
      (1 'carve-list-marker-face))
 
@@ -2029,13 +2038,13 @@ Without one the line is paragraph text, inside a quote or out of it."
        (carve--fontify-description
         ,(rx line-start (zero-or-more (in " \t"))
              (group (or "::" ":")) (one-or-more " ")
-             (not (any " \t\n")))
+             (not (in " \t\n")))
         limit))
      (1 'carve-markup-face))
 
     ;; Footnote definition: [^id]:
     (,(rx line-start (zero-or-more (in " \t"))
-          (group "[^" (one-or-more (not (any "]\n"))) "]" ":"))
+          (group "[^" (one-or-more (not (in "]\n"))) "]" ":"))
      (1 'carve-footnote-face))
 
     ;; Reference definition: [label]: url
@@ -2046,7 +2055,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; construct ledger cited it as the evidence that this mode highlights a
     ;; reference LINK, one construct over (markup-carve/emacs-carve#19).
     (,(rx line-start (zero-or-more (in " \t"))
-          (group "[" (one-or-more (not (any "]\n"))) "]" ":"))
+          (group "[" (one-or-more (not (in "]\n"))) "]" ":"))
      (1 'carve-footnote-face))
 
     ;; Abbreviation definition: *[TERM]: expansion
@@ -2057,20 +2066,20 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; bracketed term holding a space or a dot is not a definition and the line
     ;; stays prose, so the character class is what does the rejecting.
     (,(rx line-start (zero-or-more (in " \t"))
-          (group "*[" (one-or-more (any "a-zA-Z0-9")) "]" ":")
-          (one-or-more " ") (not (any " \t\n")))
+          (group "*[" (one-or-more (in "a-zA-Z0-9")) "]" ":")
+          (one-or-more " ") (not (in " \t\n")))
      (1 'carve-markup-face))
 
     ;; Footnote reference.
     ;; [^id], a reference to a footnote defined elsewhere.
-    (,(rx (group "[^" (one-or-more (not (any "]\n"))) "]"))
+    (,(rx (group "[^" (one-or-more (not (in "]\n"))) "]"))
      (1 'carve-footnote-face))
 
     ;; Inline footnote.
     ;; `^[content]' carries its own text (markup-carve/carve#404) and had no
     ;; rule: the row read as implemented on the strength of the REFERENCE rule
     ;; above, one construct over, and the run itself came back as prose.
-    (,(rx (group "^[") (group (zero-or-more (not (any "]\n")))) (group "]"))
+    (,(rx (group "^[") (group (zero-or-more (not (in "]\n")))) (group "]"))
      (1 'carve-footnote-face)
      (2 'carve-link-text-face)
      (3 'carve-footnote-face))
@@ -2092,8 +2101,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; prose and the whole thing read as a link to a reference.  The label is
     ;; starred, so the collapsed form is the same match with nothing between
     ;; the second pair of brackets.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
-          (group "[") (group (** 0 500 (not (any "]\n")))) (group "]"))
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (in "]\n")) (seq "\n" (zero-or-more (in " \t")) (not (in " \t\n]")))))) (group "]")
+          (group "[") (group (** 0 500 (not (in "]\n")))) (group "]"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face)
      (3 'carve-markup-face)
@@ -2102,8 +2111,8 @@ Without one the line is paragraph text, inside a quote or out of it."
      (6 'carve-markup-face))
 
     ;; Images: ![alt](src)
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
-          (group "(") (group (** 0 500 (not (any ")\n")))) (group ")"))
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\") (group "!" "[") (group (** 0 500 (or (not (in "]\n")) (seq "\n" (zero-or-more (in " \t")) (not (in " \t\n]")))))) (group "]")
+          (group "(") (group (** 0 500 (not (in ")\n")))) (group ")"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face)
      (3 'carve-markup-face)
@@ -2112,13 +2121,13 @@ Without one the line is paragraph text, inside a quote or out of it."
      (6 'carve-markup-face))
 
     ;; Cross-reference: </#id>
-    (,(rx (group "</#" (one-or-more (not (any ">\n"))) ">"))
+    (,(rx (group "</#" (one-or-more (not (in ">\n"))) ">"))
      (1 'carve-url-face))
 
     ;; Inline link.
     ;; [text](url), and the titled form.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
-          (group "(") (group (** 0 500 (not (any ")\n")))) (group ")"))
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (in "]\n")) (seq "\n" (zero-or-more (in " \t")) (not (in " \t\n]")))))) (group "]")
+          (group "(") (group (** 0 500 (not (in ")\n")))) (group ")"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face keep)
      (3 'carve-markup-face)
@@ -2132,8 +2141,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; as readily as a named one.  Written down because the collapsed spelling
     ;; is a construct of its own in the grammar, and a rule nobody names reads
     ;; as a construct nobody implemented.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (any "]\n")) (seq "\n" (zero-or-more (any " \t")) (not (any " \t\n]")))))) (group "]")
-          (group "[") (group (** 0 500 (not (any "]\n")))) (group "]"))
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\") (group "[") (group (** 0 500 (or (not (in "]\n")) (seq "\n" (zero-or-more (in " \t")) (not (in " \t\n]")))))) (group "]")
+          (group "[") (group (** 0 500 (not (in "]\n")))) (group "]"))
      (1 'carve-markup-face)
      (2 'carve-link-text-face keep)
      (3 'carve-markup-face)
@@ -2142,18 +2151,18 @@ Without one the line is paragraph text, inside a quote or out of it."
      (6 'carve-markup-face))
 
     ;; Autolinks: <https://...> and <email>.
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\")
-          (group "<" (or "http" "mailto:" (seq (one-or-more (any "a-zA-Z0-9._%+-"))
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\")
+          (group "<" (or "http" "mailto:" (seq (one-or-more (in "a-zA-Z0-9._%+-"))
                                                "@"))
-                 (zero-or-more (not (any "> \n"))) ">"))
+                 (zero-or-more (not (in "> \n"))) ">"))
      (1 'carve-url-face))
 
     ;; Display math: $$`...`
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\")
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\")
           (group "$$`" (minimal-match (zero-or-more not-newline)) "`"))
      (1 'carve-math-face))
     ;; Inline math: $`...`
-    (,(rx (or line-start (not (any "\\"))) (zero-or-more "\\\\")
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\")
           (group "$`" (minimal-match (zero-or-more not-newline)) "`"))
      (1 'carve-math-face))
 
@@ -2166,7 +2175,7 @@ Without one the line is paragraph text, inside a quote or out of it."
 
     ;; Raw inline code: `code`{=html}
     (,(rx (group "`" (minimal-match (one-or-more not-newline)) "`")
-          (group "{=" (one-or-more (any "a-zA-Z")) "}"))
+          (group "{=" (one-or-more (in "a-zA-Z")) "}"))
      (1 'carve-code-face)
      (2 'carve-attribute-face))
 
@@ -2217,13 +2226,13 @@ Without one the line is paragraph text, inside a quote or out of it."
      ;; [CARVE-P4-006].  Spelled with `rx' because the path alternative in the
      ;; keyword above is the same shape and the two have to stay readable
      ;; against each other.
-     (,(rx (group "@" (any "A-Za-z_") (zero-or-more (any "A-Za-z0-9_-")))
+     (,(rx (group "@" (in "A-Za-z_") (zero-or-more (in "A-Za-z0-9_-")))
            (group ":")
            (group (or (seq ?\" (zero-or-more (or (seq ?\\ not-newline)
-                                                 (not (any ?\" ?\\ ?\n)))) ?\")
+                                                 (not (in ?\" ?\\ ?\n)))) ?\")
                       (seq ?' (zero-or-more (or (seq ?\\ not-newline)
-                                                (not (any ?' ?\\ ?\n)))) ?')
-                      (one-or-more (not (any " \t}" ?\n))))))
+                                                (not (in ?' ?\\ ?\n)))) ?')
+                      (one-or-more (not (in " \t}" ?\n))))))
       (progn (goto-char (match-beginning 4)) (match-end 4))
       nil
       (1 'carve-include-option-face)
@@ -2240,7 +2249,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;;
     ;; It sits after the verbatim rules on purpose: inside a code span a
     ;; backslash is content, and those rules have already claimed it.
-    (,(rx (group "\\" (any "!-/:-@[-`{-~")))
+    (,(rx (group "\\" (in "!-/:-@[-`{-~")))
      (1 'carve-markup-face))
 
     ;; Hard break: a backslash at the end of a line.
@@ -2346,7 +2355,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; block that follows it.  The block itself is the rule below; the brackets
     ;; had nothing, so the row cited the CODE span rule.  The `{' is what
     ;; distinguishes the span from a link, so it is required and not consumed.
-    (,(rx (group "[") (group (zero-or-more (not (any "][\n")))) (group "]")
+    (,(rx (group "[") (group (zero-or-more (not (in "][\n")))) (group "]")
           "{")
      (1 'carve-markup-face)
      (2 'carve-link-text-face)
@@ -2396,18 +2405,18 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; Citation groups: [+@key, loc; @key2] — highlight @key and the +/- markers.
     ;; A citation bracket has no (url)/[ref]/{attr} tail.
     (,(rx (group "[" (opt "+"))
-          (** 0 500 (not (any "@]\n")))
-          (group "@" (one-or-more (any "A-Za-z0-9_:.#$%&+?<>~/-")))
-          (** 0 500 (not (any "]\n")))
+          (** 0 500 (not (in "@]\n")))
+          (group "@" (one-or-more (in "A-Za-z0-9_:.#$%&+?<>~/-")))
+          (** 0 500 (not (in "]\n")))
           "]"
-          (not (any "([{" ?\n)))
+          (not (in "([{" ?\n)))
      (1 'carve-mention-face)
      (2 'carve-mention-face))
     ;; Also match citation brackets at end-of-line.
     (,(rx (group "[" (opt "+"))
-          (** 0 500 (not (any "@]\n")))
-          (group "@" (one-or-more (any "A-Za-z0-9_:.#$%&+?<>~/-")))
-          (** 0 500 (not (any "]\n")))
+          (** 0 500 (not (in "@]\n")))
+          (group "@" (one-or-more (in "A-Za-z0-9_:.#$%&+?<>~/-")))
+          (** 0 500 (not (in "]\n")))
           "]" eol)
      (1 'carve-mention-face)
      (2 'carve-mention-face))
@@ -2417,9 +2426,9 @@ Without one the line is paragraph text, inside a quote or out of it."
      (1 'carve-markup-face))
 
     ;; Mentions and tags (word boundary).
-    (,(rx (or bol space (any "([")) (group "@" (one-or-more (any "a-zA-Z0-9._-"))))
+    (,(rx (or bol space (in "([")) (group "@" (one-or-more (in "a-zA-Z0-9._-"))))
      (1 'carve-mention-face))
-    (,(rx (or bol space (any "([")) (group "#" (one-or-more (any "a-zA-Z0-9._-"))))
+    (,(rx (or bol space (in "([")) (group "#" (one-or-more (in "a-zA-Z0-9._-"))))
      (1 'carve-tag-face))
 
     ;; Extension inline: :name[content]
@@ -2428,8 +2437,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; literal text - which is what the character classes here say.  Distinct
     ;; from the `:name:' symbol below by its closing bracket, and from a
     ;; definition-list line by having no space after the colon.
-    (,(rx (group ":" (any "a-zA-Z_") (zero-or-more (any "a-zA-Z0-9_-")))
-          (group "[") (group (zero-or-more (not (any "]\n")))) (group "]"))
+    (,(rx (group ":" (in "a-zA-Z_") (zero-or-more (in "a-zA-Z0-9_-")))
+          (group "[") (group (zero-or-more (not (in "]\n")))) (group "]"))
      (1 'carve-markup-face)
      (2 'carve-markup-face)
      (3 'carve-link-text-face)
@@ -2437,7 +2446,7 @@ Without one the line is paragraph text, inside a quote or out of it."
 
     ;; Symbol shortcodes :name: (word boundary; first name char is a letter,
     ;; digit, `+` or `-`, so `:+1:` / `:-1:` match but `:_x:` stays literal).
-    (,(rx (or bol space (any "([")) (group ":" (any "a-zA-Z0-9+-") (zero-or-more (any "a-zA-Z0-9_+-")) ":"))
+    (,(rx (or bol space (in "([")) (group ":" (in "a-zA-Z0-9+-") (zero-or-more (in "a-zA-Z0-9_+-")) ":"))
      (1 'carve-symbol-face))
 
     ;; Thematic break.  Leading whitespace is allowed: a break can open inside
@@ -2488,8 +2497,7 @@ Without one the line is paragraph text, inside a quote or out of it."
 
     ;; Typographic symbols: (c) (r) (tm) +-
     (,(rx (group (or "(c)" "(r)" "(tm)" "+-")))
-     (1 'carve-typographic-face))
-    )
+     (1 'carve-typographic-face)))
   "Font-lock keywords for `carve-mode'.")
 
 ;;;; Constructs this mode does not fontify, and why
@@ -2531,7 +2539,7 @@ Only matches when the block starts on the first line of the buffer."
   (when (and (= (point) (point-min))
              (save-excursion
                (goto-char (point-min))
-               (looking-at (rx line-start "---" (zero-or-more (any "a-zA-Z ")) line-end))))
+               (looking-at (rx line-start "---" (zero-or-more (in "a-zA-Z ")) line-end))))
     (goto-char (point-min))
     (forward-line 1)
     (when (re-search-forward (rx line-start "---" (zero-or-more space) line-end) limit t)
@@ -2566,7 +2574,7 @@ Only matches when the block starts on the first line of the buffer."
 ;; ONCE per change rather than once per font-lock chunk.
 
 (defun carve--inert-percent (beg end)
-  "Clear the comment-start flags on every `%\\=' between BEG and END."
+  "Clear the comment-opening syntax flags on every `%\\=' between BEG and END."
   (save-excursion
     (goto-char beg)
     (while (search-forward "%" end t)
@@ -2606,19 +2614,19 @@ than left live."
       (goto-char (min limit (+ close len))))))
 
 (defun carve--propertize-autolink (limit)
-  "Point is on a `<\\='; protect an autolink's payload and step over it.
+  "Protect the autolink's payload at the `<\\=' at point, up to LIMIT.
 An autolink's text IS its destination, so nothing in it is markup: the `%%\\='
 of a percent-encoded path is part of the URL."
   (if (and (looking-at (rx "<" (or "http" "mailto:"
-                                   (seq (one-or-more (any "a-zA-Z0-9._%+-")) "@"))
-                           (zero-or-more (not (any "> "))) ">"))
+                                   (seq (one-or-more (in "a-zA-Z0-9._%+-")) "@"))
+                           (zero-or-more (not (in "> "))) ">"))
            (<= (match-end 0) limit))
       (progn (carve--inert-percent (point) (match-end 0))
              (goto-char (match-end 0)))
     (forward-char 1)))
 
 (defun carve--propertize-label (limit)
-  "Point is on a `[\\='; protect a link, image or span and step over it.
+  "Protect the link, image or span at the `[\\=' at point, up to LIMIT.
 A bracket run that CLOSES and carries a payload which ALSO closes -
 `](dest)\\=', `][ref]\\=' or `]{attrs}\\=' - is a link, an image or a span, and
 the line goes on after it: the engine renders `a [x %% y](u) z\\=' as a link
@@ -2645,10 +2653,11 @@ reach the end of the line: `a [x %% y] z\\=' and `a [x %% y](u z\\=' both render
       (goto-char payload-end))))
 
 (defun carve--propertize-braced-comment (limit)
-  "Point is on the `{\\=' of a `{%\\=' or `{#\\=' run; protect it and step over it.
+  "Protect the `{%\\=' or `{#\\=' run at point, up to LIMIT, and step over it.
 Both hold a payload the reader is not meant to read as markup, so a `%%\\='
-inside one must not open a comment that outlives the closer: `a {% x %% y %} z\\='
-renders `a  z\\=', with the `%}\\=' still closing and the `z\\=' still prose."
+inside one must not open a comment that outlives the closer:
+`a {% x %% y %} z\\=' renders `a  z\\=', with the `%}\\=' still closing and the
+`z\\=' still prose."
   (let* ((closer (if (eq (char-after (1+ (point))) ?%) "%}" "#}"))
          (close (save-excursion
                   (goto-char (+ 2 (point)))
@@ -2659,9 +2668,9 @@ renders `a  z\\=', with the `%}\\=' still closing and the `z\\=' still prose."
       (forward-char 1))))
 
 (defun carve--propertize-percent (limit)
-  "Point is on a `%\\='; decide whether the run it starts opens a comment.
+  "Decide whether the `%\\=' run at point, before LIMIT, opens a comment.
 A `%%\\=' run is a comment marker only when it is PRECEDED BY WHITESPACE or
-starts its line (spec, \"Comments\"): `The value is 50%% increase\\=' stays
+begins its line (spec, \"Comments\"): `The value is 50%% increase\\=' stays
 literal, which is what keeps a percentage safe.  A run that opens a comment
 takes the rest of its line and there is nothing inside it left to protect."
   (let* ((beg (point))
@@ -2682,8 +2691,8 @@ takes the rest of its line and there is nothing inside it left to protect."
 (defun carve--propertize-prose (beg end)
   "Protect every verbatim run between BEG and END.
 BEG to END is one paragraph's worth of prose: an inline run may cross a soft
-line break but not a blank line, so a paragraph is the widest a `\\=`\\=' run can
-reach."
+line break but not a blank line, so a paragraph is the widest a `\\=`\\=' run
+can reach."
   (goto-char beg)
   (while (< (point) end)
     (let ((char (char-after)))
@@ -3060,7 +3069,7 @@ and a prefix argument prompts for FORMAT.  CLI errors are shown in the
                     ;; carve-js 0.1.7's npm bin exits 0 without running.
                     (user-error "`%s migrate' printed nothing; is it the Carve CLI?"
                                 carve-command)
-                  (user-error "carve migrate failed (exit %s); see *Carve Import*"
+                  (user-error "Carve migrate failed (exit %s); see *Carve Import*"
                               status)))))
         (delete-file errfile)))
     (when target-buf
