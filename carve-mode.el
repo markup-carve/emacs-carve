@@ -1912,7 +1912,9 @@ Without one the line is paragraph text, inside a quote or out of it."
              (group (one-or-more
                      (or (seq (any "-*") (one-or-more " ")
                               (opt "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]" (one-or-more " ")))
-                         (seq (or (one-or-more digit) (any "a-zA-Z")) (any ".)") (one-or-more " "))))
+                         (seq (or (one-or-more digit) (any "a-zA-Z") (one-or-more (any "ivxlcdmIVXLCDM")))
+                              (any ".)") (one-or-more " "))
+                         (seq "." (one-or-more " "))))
                     (zero-or-more ">" " " (zero-or-more " "))
                     ">" (or " " line-end)))
         limit))

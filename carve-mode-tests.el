@@ -1327,7 +1327,7 @@ A marker needs a space or the line end after it, markers are not tab
 separated, and a list marker after a paragraph line is text with its quote."
   (pcase-dolist (`(,text ,n)
                  '(("> > q\n" 2) ("- > q\n" 1) ("- > > q\n" 2) ("1. > q\n" 1)
-                   ("- [x] > q\n" 1) ("> - > q\n" 2) ("para\n- > q\n" 0)
+                   ("- [x] > q\n" 1) ("iv. > q\n" 1) (". > q\n" 1) ("a) > q\n" 1) ("> - > q\n" 2) ("para\n- > q\n" 0)
                    ("- >q\n" 0) ("-\t> q\n" 0) ("> >\tq\n" 1) (">> q\n" 0)))
     (should (equal (carve-test--quote-markers text) n))))
 
