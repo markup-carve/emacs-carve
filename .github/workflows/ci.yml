@@ -42,3 +42,45 @@ jobs:
       # that the mode is wrong.
       - name: The vendored block battery still matches carve-grammars
         run: ./tools/check-battery-drift.sh
+
+  minimum-emacs:
+    # carve-mode declares Emacs 27.1. The test job above runs whatever Ubuntu
+    # ships, which hid a void `string-empty-p' on 27 and 28.
+    name: Byte-compile and ERT on Emacs ${{ matrix.emacs }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        emacs: ['27.1', '28.2']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@v8.0
+        with:
+          version: ${{ matrix.emacs }}
+      - name: Byte-compile (warnings fail the build)
+        run: |
+          emacs -Q --batch -L . --eval '(setq byte-compile-error-on-warn t)' \
+            -f batch-byte-compile carve-mode.el carve-lsp.el
+      - name: Run ERT tests
+        run: |
+          emacs -Q --batch -L . \
+            -l ert \
+            -l carve-mode.el \
+            -l carve-lsp.el \
+            -l carve-mode-tests.el \
+            -l carve-battery-tests.el \
+            -l carve-lsp-tests.el \
+            -f ert-run-tests-batch-and-exit
+
+  package-lint:
+    name: package-lint and checkdoc
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: purcell/setup-emacs@v8.0
+        with:
+          version: '30.1'
+      - name: Lint the way MELPA does
+        run: emacs -Q --batch -l tools/melpa-lint.el

@@ -8,8 +8,8 @@
 ;; temporary buffer, forces font-lock, and asserts that representative
 ;; positions carry the expected face.  Run with:
 ;;
-;;   emacs -Q --batch -l ert -l carve-mode.el -l carve-mode-tests.el \
-;;     -f ert-run-tests-batch-and-exit
+;;   `emacs -Q --batch -l ert -l carve-mode.el -l carve-mode-tests.el \
+;;     -f ert-run-tests-batch-and-exit'
 
 ;;; Code:
 
@@ -31,7 +31,7 @@ and the `face' text property at that position is returned."
     (get-text-property (point) 'face)))
 
 (defun carve-test--face-includes (face expected)
-  "Return non-nil when FACE is EXPECTED or contains EXPECTED in a list."
+  "Return non-nil when FACE is EXPECTED or a list holding EXPECTED."
   (or (eq face expected)
       (and (listp face) (memq expected face))))
 
@@ -59,7 +59,7 @@ enough."
     (get-text-property (match-beginning 0) 'face)))
 
 (defun carve-test--text-with-face (text face)
-  "Open TEXT in a `carve-mode\=' buffer, fontify, and return the text carrying FACE.
+  "Open TEXT in `carve-mode\=', fontify, and return the text carrying FACE.
 Every character whose `face\=' property is or contains FACE is concatenated, so
 a rule that scopes only PART of a construct reports the part rather than a
 bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
@@ -142,7 +142,11 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
     (should (carve-test--face-includes
              (carve-test--face-at csv "second") 'font-lock-string-face))
     (should (carve-test--face-includes
-             (carve-test--face-at csv "\"\"b") 'font-lock-escape-face))
+             (carve-test--face-at csv "\"\"b")
+             ;; Emacs 29 added the escape face; earlier releases fall back.
+             (if (facep 'font-lock-escape-face)
+                 'font-lock-escape-face
+               'font-lock-string-face)))
     (should-not (carve-test--face-includes
                  (carve-test--face-at csv "\"b,plain") 'font-lock-string-face))
     (should-not (carve-test--face-includes
@@ -295,7 +299,7 @@ behavior so a later rewrite of the rule cannot drop a spelling."
 
 A marker followed by whitespace only is prose: carve-rs renders `- ' as
 `<p>-</p>'.  The bare dot is not an exception - it may drop its VALUE, the
-number, but `. ' is still `<p>.</p>'.
+number, but a dot and a space still render as `<p>.</p>'.
 
 Only spaces and tabs separate a marker from its content, so a heading whose
 content starts with a non-ASCII space is still a heading."
@@ -702,7 +706,7 @@ the closing braces as a selector."
 ;; than preference:
 ;;
 ;;     ```                     -> <pre><code>a *b* c
-;;     a *b* c                        
+;;     a *b* c
 ;;                                    d *e* f
 ;;     d *e* f                 </code></pre>
 ;;
@@ -833,7 +837,7 @@ engine's:
     (buffer-string)))
 
 (ert-deftest carve-test-fill-keeps-blocks-apart ()
-  "M-q fills prose and leaves every block line where it is."
+  "\\[fill-paragraph] fills prose and leaves every block line where it is."
   (dolist (case '(("- first item\n- second item\n" . 1)
                   ("# Heading\ntext after heading\n" . 12)
                   ("text\n# Heading\n" . 1)
@@ -850,7 +854,7 @@ engine's:
     (should (equal (carve-test--fill (car case) (cdr case)) (car case)))))
 
 (ert-deftest carve-test-fill-joins-prose ()
-  "M-q still joins a paragraph, a list item, a quote and a container body."
+  "\\[fill-paragraph] still joins a paragraph, a list item, a quote and a container body."
   (should (equal (carve-test--fill "para one\npara two\n" 1) "para one para two\n"))
   (should (equal (carve-test--fill "- item one\n  item two\n- next\n" 3)
                  "- item one item two\n- next\n"))
@@ -1014,9 +1018,6 @@ engine's:
     (should-not (carve--verbatim-region-at (- (point-max) 2)))
     (should (= 1 (length carve--verbatim-cache)))))
 
-(provide 'carve-mode-tests)
-
-;;; carve-mode-tests.el ends here
 
 (ert-deftest carve-test-brace-span-alone-on-a-line-is-not-an-attribute-line ()
   "A forced span alone on a line is emphasis, not a block-attribute line.
@@ -1593,7 +1594,7 @@ markup - a claim that the author deleted something."
                (carve-test--face-at "a {--} b\n" "{--}")
                'carve-critic-face)))
 
-(ert-deftest carve-test-hyphen-run-opening-a-word-is-a-flag ()
+(ert-deftest carve-test-hyphen-run-opening-a-word-stays-literal ()
   "A run with whitespace before it and a word after it stays literal.
 That is what keeps `git log --oneline' a flag (markup-carve/carve#1443)."
   (should-not (carve-test--face-at "git log --oneline\n" "--oneline"))
@@ -2206,3 +2207,7 @@ BODY is called with a fresh temporary directory."
            (should-error (carve-import-file src) :type 'user-error))
          (should asked)
          (should (equal (buffer-string) "unsaved\n")))))))
+
+(provide 'carve-mode-tests)
+
+;;; carve-mode-tests.el ends here
