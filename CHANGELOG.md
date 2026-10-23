@@ -13,13 +13,13 @@ Releases before 0.1.5 are described on the
 ### Fixed
 
 - On Emacs 27 and 28, fontifying a block-attribute line no longer fails with
-  `void-function string-empty-p`; `subr-x` is now loaded (#PR).
+  `void-function string-empty-p`; `subr-x` is now loaded (#70).
 
 ### Changed
 
 - Faces that set their own weight, slant or underline now inherit `bold`,
   `italic` or `link` instead, so a theme or customization of the parent face
-  carries through (#PR).
+  carries through (#70).
 ## [0.1.8] - 2026-10-23
 
 ### Added
