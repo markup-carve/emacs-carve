@@ -1,7 +1,7 @@
 ;;; carve-lsp.el --- Language server support for Carve markup -*- lexical-binding: t; -*-
 
-;; Author: markup-carve
-;; Maintainer: markup-carve
+;; Author: markup-carve <https://github.com/markup-carve>
+;; Maintainer: markup-carve <https://github.com/markup-carve>
 ;; Version: 0.1.9
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve

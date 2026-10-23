@@ -1,7 +1,7 @@
 ;;; carve-mode.el --- Major mode for Carve markup -*- lexical-binding: t; -*-
 
-;; Author: markup-carve
-;; Maintainer: markup-carve
+;; Author: markup-carve <https://github.com/markup-carve>
+;; Maintainer: markup-carve <https://github.com/markup-carve>
 ;; Version: 0.1.9
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
@@ -504,7 +504,7 @@ start of the document it is prose."
             (let* ((fence (match-string 1))
                    (beg (point))
                    (closer-re (concat "^[ \t]*" (regexp-quote fence) "[^%\n]*$")))
-              (goto-char (line-end-position))
+              (end-of-line)
               (when (re-search-forward closer-re nil t)
                 (push (cons beg (match-end 0)) carve--verbatim-cache)))))
           (forward-line 1))
@@ -884,7 +884,7 @@ than swallowing the rest of the buffer."
           (set-match-data (list opener-beg (match-end 0)
                                 opener-beg (match-end 0)))
           (throw 'done t))
-        (goto-char (line-end-position))))
+        (end-of-line)))
     nil))
 
 (defconst carve--hyphen-run-re
@@ -2536,7 +2536,7 @@ Without one the line is paragraph text, inside a quote or out of it."
 (defun carve--fontify-frontmatter (limit)
   "Fontify a leading frontmatter block between point and LIMIT.
 Only matches when the block starts on the first line of the buffer."
-  (when (and (= (point) (point-min))
+  (when (and (bobp)
              (save-excursion
                (goto-char (point-min))
                (looking-at (rx line-start "---" (zero-or-more (in "a-zA-Z ")) line-end))))
@@ -2684,7 +2684,7 @@ takes the rest of its line and there is nothing inside it left to protect."
                       (save-excursion (goto-char beg)
                                       (skip-chars-backward " \t")
                                       (bolp)))))
-        (goto-char (line-end-position))
+        (end-of-line)
       (carve--inert-percent beg run-end)
       (goto-char run-end))))
 
@@ -2836,7 +2836,7 @@ every one of them its opener and its closer."
       ;; for fenced blocks then read as an unterminated opener, so the prose
       ;; after a closed block came back as code.  Walking past it lands on the
       ;; block's opener instead, and the matcher pairs the two and moves on.
-      (while (and (> (point) (point-min))
+      (while (and (not (bobp))
                   (not (looking-at carve--blank-line-re)))
         (forward-line -1))
       (when (< (point) font-lock-beg)
@@ -2878,7 +2878,7 @@ re-propertized on demand, so END needs no widening."
                (let ((region (carve--verbatim-region-at (point))))
                  (if region
                      (car region)
-                   (while (and (> (point) (point-min))
+                   (while (and (not (bobp))
                                (not (looking-at carve--blank-line-re)))
                      (forward-line -1))
                    (let ((inside (carve--verbatim-region-at (point))))
