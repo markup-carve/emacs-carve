@@ -1,5 +1,8 @@
 ;;; carve-mode-tests.el --- Tests for carve-mode -*- lexical-binding: t; -*-
 
+;; Author: markup-carve <https://github.com/markup-carve>
+;; Assisted-by: Claude Code:claude-opus-5-5
+
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:

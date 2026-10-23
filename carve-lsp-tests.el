@@ -1,5 +1,8 @@
 ;;; carve-lsp-tests.el --- Tests for carve-lsp -*- lexical-binding: t; -*-
 
+;; Author: markup-carve <https://github.com/markup-carve>
+;; Assisted-by: Claude Code:claude-opus-5-5
+
 ;; SPDX-License-Identifier: MIT
 
 ;;; Commentary:

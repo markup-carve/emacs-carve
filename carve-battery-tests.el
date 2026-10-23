@@ -1,5 +1,8 @@
 ;;; carve-battery-tests.el --- Shared block battery for carve-mode  -*- lexical-binding: t; -*-
 
+;; Author: markup-carve <https://github.com/markup-carve>
+;; Assisted-by: Claude Code:claude-opus-5-5
+
 ;; The block shapes every Carve grammar must classify the same way.
 ;;
 ;; Six copies of these block rules exist across the Carve editor integrations,
