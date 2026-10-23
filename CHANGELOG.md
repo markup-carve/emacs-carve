@@ -8,6 +8,27 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-10-23
+
+### Added
+
+- `csv` and `tsv` fence bodies are highlighted: every field takes a value face
+  and the separator the operator face (#64, #65, #66).
+
+### Fixed
+
+- A lone `+` is painted as a continuation marker only at column 0 of its
+  container or right after a block opener, where the engine reads one (#67).
+- A quote opened on a list item line takes its first-block `+` where the
+  engine does (markup-carve/carve#3421): `- > +` is a marker when the next
+  line starts a non-list block at column 0, at the line's indent or at the
+  quote's column, and `-  > +` is text (#69).
+- Every quote marker in a line's opener run is painted: the second `>` of
+  `> > q` and the `>` of `- > q` (#69).
+- The inline attribute face goes only to an attribute block the engine
+  attaches, glued to an element closer; `{.x}` elsewhere in prose is text
+  (#63).
+
 ## [0.1.7] - 2026-10-15
 
 ### Fixed
