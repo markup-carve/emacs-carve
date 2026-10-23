@@ -2,7 +2,7 @@
 
 ;; Author: markup-carve
 ;; Maintainer: markup-carve
-;; Version: 0.1.7
+;; Version: 0.1.8
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve
@@ -1486,6 +1486,19 @@ A marker takes its space or ends the line: `>>' and `>+' are no markers."
               (= (carve--cm-ind (cdr dc)) 0)
               (not (string-match-p carve--cm-item-re (cdr dc)))))))
 
+(defun carve--cm-hosted-quote-follower (next d indent chain)
+  "Non-nil when NEXT is the first block of a quote opened behind a list item.
+The line is INDENT plus CHAIN, D quotes deep, CHAIN ending in the quote's
+`> '.  NEXT takes it at column 0, at INDENT or at the quote's column, when it
+starts a block other than a list item; the markers are one space apart
+\(markup-carve/carve#3421)."
+  (and next (not (string-match-p "  " chain))
+       (let ((nc (carve--cm-strip next (min d (car (carve--cm-depth next))))))
+         (and nc (not (carve--cm-blank nc))
+              (not (string-match-p "\\`[ \t>]*\\+[ \t]*\\'" nc))
+              (not (string-match-p carve--cm-item-re nc))
+              (memq (carve--cm-ind nc) (list 0 indent (+ indent (length chain) -2)))))))
+
 (defun carve--cm-quote-run-opens-p (lines i d)
   "Non-nil when no line of the run above line I of LINES is quoted D deep."
   (let ((j (1- i)) (first t))
@@ -1603,6 +1616,10 @@ marker sits at column C, and NEXT starts a block at that column."
          ((and toks (carve--cm-blank rest))
           (let ((k (car (last toks))))
             (cond
+             ((and (string-prefix-p ">" k)
+                   (seq-some (lambda (s) (not (string-match-p "\\`\\(?:>\\|:\\|\\[\\^\\)" s)))
+                             toks))
+              (carve--cm-hosted-quote-follower next d (length lead) chain))
              ((string-prefix-p ">" k)
               (carve--cm-quote-first-block
                next (+ d (seq-count (lambda (s) (string-prefix-p ">" s)) toks))))
@@ -1878,6 +1895,33 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx line-start (zero-or-more (in " \t")) (group ">")
           (or " " line-end))
      (1 'carve-blockquote-face))
+
+    ;; The markers after the first: `> > x' nests, and `- > x' opens a quote on
+    ;; the item's line.  Markers are one or more spaces apart, never a tab, and
+    ;; a list marker after a paragraph line is text, so its quote is too.
+    (,(rx line-start (zero-or-more (in " \t")) ">" " "
+          (group (one-or-more (zero-or-more " ") ">" (or " " line-end))))
+     (,(rx (group ">") (or " " line-end))
+      (progn (goto-char (match-beginning 1)) (match-end 1))
+      nil
+      (1 'carve-blockquote-face)))
+    ((lambda (limit)
+       (carve--fontify-list-marker
+        ,(rx line-start (zero-or-more (in " \t"))
+             (zero-or-more ">" " " (zero-or-more " "))
+             (group (one-or-more
+                     (or (seq (any "-*") (one-or-more " ")
+                              (opt "[" (any ?\s ?x ?X ?_ ?- ?> ??) "]" (one-or-more " ")))
+                         (seq (or (one-or-more digit) (any "a-zA-Z") (one-or-more (any "ivxlcdmIVXLCDM")))
+                              (any ".)") (one-or-more " "))
+                         (seq "." (one-or-more " "))))
+                    (zero-or-more ">" " " (zero-or-more " "))
+                    ">" (or " " line-end)))
+        limit))
+     (,(rx (group ">") (or " " line-end))
+      (progn (goto-char (match-beginning 1)) (match-end 1))
+      nil
+      (1 'carve-blockquote-face)))
 
     ;; Blocks inside a quote, after its markers: a heading, a definition
     ;; marker and a container fence.  List markers and table rows take the

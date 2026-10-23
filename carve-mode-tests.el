@@ -1287,6 +1287,50 @@ In `> >+\=' only the first `>\=' is a quote prefix (markup-carve/carve#3421)."
   (should-not (carve-test--face-includes
                (carve-test--face-at "> >+\nq\n" ">+") 'carve-blockquote-face)))
 
+(ert-deftest carve-test-list-hosted-quote-continuation ()
+  "A quote opened on a list item line takes its first-block plus.
+The follower starts a non-list block at column 0, at the line's indent or at
+the owning quote's column, and the markers are one space apart
+\(markup-carve/carve#3421, corpus 649 to 656, read against carve-js 0.1.13)."
+  (pcase-dolist (`(,text ,line)
+                 '(("- > +\npara\n" 1) ("- > +\n> q\n" 1) ("- > +\n  > q\n" 1)
+                   ("- a\n  - > +\n  b\n" 2) ("- a\n  - > +\n# h\n" 2)
+                   ("- a\n  - - > +\n  b\n" 2) ("- - > +\n    b\n" 1)
+                   ("- > > +\n    b\n" 1) ("- > > +\n> q\n" 1)
+                   ("> - > +\n# h\n" 1) ("> - > +\n>   # h\n" 1)
+                   ("1. > +\n   b\n" 1) ("- [x] > +\n# h\n" 1)))
+    (should (carve-test--marker-at-line-p text line)))
+  (pcase-dolist (`(,text ,line)
+                 '(("- > +\n b\n" 1) ("- a\n  - > +\n b\n" 2) ("- - > +\n  b\n" 1)
+                   ("- > > +\n  > q\n" 1) ("- > > +\n  - s\n" 1) ("> - > +\n- s\n" 1)
+                   ("> - > +\n>  # h\n" 1) ("- > +\n   # h\n" 1) ("- > +\n" 1)
+                   ("- > +\n\n# h\n" 1) ("-  > +\n# h\n" 1)))
+    (should-not (carve-test--marker-at-line-p text line))))
+
+(defun carve-test--quote-markers (text)
+  "How many quote markers TEXT paints."
+  (with-temp-buffer
+    (insert text)
+    (carve-mode)
+    (font-lock-ensure)
+    (let ((n 0))
+      (goto-char (point-min))
+      (while (search-forward ">" nil t)
+        (when (carve-test--face-includes
+               (get-text-property (match-beginning 0) 'face) 'carve-blockquote-face)
+          (setq n (1+ n))))
+      n)))
+
+(ert-deftest carve-test-every-quote-marker-in-an-opener-run ()
+  "Each quote marker of a line's opener run is painted, after a list marker too.
+A marker needs a space or the line end after it, markers are not tab
+separated, and a list marker after a paragraph line is text with its quote."
+  (pcase-dolist (`(,text ,n)
+                 '(("> > q\n" 2) ("- > q\n" 1) ("- > > q\n" 2) ("1. > q\n" 1)
+                   ("- [x] > q\n" 1) ("iv. > q\n" 1) (". > q\n" 1) ("a) > q\n" 1) ("> - > q\n" 2) ("para\n- > q\n" 0)
+                   ("- >q\n" 0) ("-\t> q\n" 0) ("> >\tq\n" 1) (">> q\n" 0)))
+    (should (equal (carve-test--quote-markers text) n))))
+
 (ert-deftest carve-test-continuation-marker-follows-the-next-line ()
   "Emptying the line below a `+\' refontifies the `+\', which then stays text."
   (with-temp-buffer
