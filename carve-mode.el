@@ -3,7 +3,7 @@
 ;; Author: markup-carve <https://github.com/markup-carve>
 ;; Assisted-by: Claude Code:claude-opus-5-5
 ;; Maintainer: markup-carve <https://github.com/markup-carve>
-;; Version: 0.1.9
+;; Version: 0.1.10
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/markup-carve/emacs-carve
