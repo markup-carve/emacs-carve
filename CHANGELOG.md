@@ -8,6 +8,16 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+## [0.1.10] - 2026-10-24
+
+The Emacs package now carries the attribution header required for MELPA submission.
+
+### Improvements
+
+- Package files include the AI assistance attribution required by MELPA (#71).
+
+**Full Changelog**: https://github.com/markup-carve/emacs-carve/compare/0.1.9...0.1.10
+
 ## [0.1.9] - 2026-10-23
 
 ### Fixed
