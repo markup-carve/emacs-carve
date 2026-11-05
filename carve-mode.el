@@ -2426,10 +2426,15 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx (group "<" (one-or-more digit) ">"))
      (1 'carve-markup-face))
 
-    ;; Mentions and tags (word boundary).
-    (,(rx (or bol space (in "([")) (group "@" (one-or-more (in "a-zA-Z0-9._-"))))
+    ;; Mentions and tags (word boundary).  A dot is interior only: in
+    ;; `ping @markus.' the dot is sentence punctuation (`dotted_name').
+    (,(rx (or bol space (in "(["))
+          (group "@" (one-or-more (in "a-zA-Z0-9_-"))
+                 (zero-or-more "." (one-or-more (in "a-zA-Z0-9_-")))))
      (1 'carve-mention-face))
-    (,(rx (or bol space (in "([")) (group "#" (one-or-more (in "a-zA-Z0-9._-"))))
+    (,(rx (or bol space (in "(["))
+          (group "#" (one-or-more (in "a-zA-Z0-9_-"))
+                 (zero-or-more "." (one-or-more (in "a-zA-Z0-9_-")))))
      (1 'carve-tag-face))
 
     ;; Extension inline: :name[content]
