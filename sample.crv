@@ -76,7 +76,7 @@ A generic div carrying attributes from the line above.
 
 ## Tables
 
-|= Fruit |=> Price |
+|= Fruit |={>} Price |
 | Apple  | $1      |
 | Pear   | $2      |
 ^ Fruit prices

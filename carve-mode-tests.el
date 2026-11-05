@@ -186,6 +186,35 @@ behavior so a later rewrite of the rule cannot drop a spelling."
            (carve-test--face-at "- item\n\n  ***\n" "***")
            'carve-markup-face)))
 
+(ert-deftest carve-test-spaced-thematic-break ()
+  "`- - -' and `* * *' with single spaces are breaks, not bullets (carve#4814)."
+  (dolist (line '("- - -" "* * *" "- - - -"))
+    (should (equal (carve-test--text-with-face (concat "a\n\n" line "\n\nb\n")
+                                               'carve-markup-face)
+                   line)))
+  ;; A wider gap is a nested list, and `_ _ _' is text.
+  (should (carve-test--face-includes
+           (carve-test--face-at "*  *  *\n" "*") 'carve-list-marker-face))
+  (should-not (carve-test--face-at "a\n\n_ _ _\n" "_ _ _")))
+
+(ert-deftest carve-test-frontmatter-without-closer-runs-to-the-end ()
+  "A first-line opener with no closer claims the whole buffer (carve#5016)."
+  (should (carve-test--face-includes
+           (carve-test--face-at "---\ntitle: x\n\n# Not a heading\n" "# Not")
+           'carve-frontmatter-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at-in-region "---\na: 1\n\nb\n\n%% c\n" "%% c" "b")
+           'carve-frontmatter-face)))
+
+(ert-deftest carve-test-frontmatter-opener-spelling ()
+  "The opener takes one optional space and a letter-or-digit token."
+  (dolist (src '("---yaml\na\n---\n" "--- toml\na\n---\n" "--- json5\na\n---\n"))
+    (should (carve-test--face-includes (carve-test--face-at src "a\n")
+                                       'carve-frontmatter-face)))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "---  yaml\na\n---\n" "a\n")
+               'carve-frontmatter-face)))
+
 (ert-deftest carve-test-frontmatter-keeps-its-own-face ()
   "The break rule does not steal the front-matter delimiters."
   (should (carve-test--face-includes
@@ -391,6 +420,15 @@ marker - and a tab does not separate (markup-carve/carve#525)."
   (should (carve-test--face-includes
            (carve-test--face-at "|= Fruit |= Price |\n" "|=")
            'carve-table-face)))
+
+(ert-deftest carve-test-table-braced-alignment ()
+  "A cell's alignment block is table markup (carve#5091 D3)."
+  (should (equal (carve-test--text-with-face
+                  "|={>} Price |={~v .x} B |\n|{?^} 3 | 4 |\n" 'carve-table-face)
+                 "|={>}|={~v .x}||{?^}||"))
+  ;; The deprecated 0.1.13 prefix is still read.
+  (should (equal (carve-test--text-with-face "|=> Price |<^ x |\n" 'carve-table-face)
+                 "|=>|<^|")))
 
 (ert-deftest carve-test-footnote-ref ()
   "A `[^id]' footnote reference is fontified."
@@ -637,6 +675,28 @@ the closing braces as a selector."
                  "@john.doe"))
   (should (equal (carve-test--text-with-face "see #release-1.0.\n" 'carve-tag-face)
                  "#release-1.0")))
+
+(ert-deftest carve-test-mention-and-tag-need-a-letter ()
+  "A name with no ASCII letter is text (carve#4809)."
+  (should (equal (carve-test--text-with-face "issue #123 and @5 but #v2\n"
+                                             'carve-tag-face)
+                 "#v2"))
+  (should (equal (carve-test--text-with-face "@5 then @a1\n" 'carve-mention-face)
+                 "@a1")))
+
+(ert-deftest carve-test-initials-are-not-list-markers ()
+  "A letter or roman marker with a dot needs two spaces (carve#4811)."
+  (should-not (carve-test--face-at "J. R. R. Tolkien wrote it\n" "J."))
+  (should-not (carve-test--face-at "e. g. foo\n" "e."))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a.  first\n" "a.") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "iv.  fourth\n" "iv.") 'carve-list-marker-face))
+  ;; Digit and `)' markers keep the single space.
+  (should (carve-test--face-includes
+           (carve-test--face-at "10. x\n" "10.") 'carve-list-marker-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a) x\n" "a)") 'carve-list-marker-face)))
 
 (ert-deftest carve-test-symbol ()
   "A `:name:' symbol shortcode at a word boundary is fontified."
@@ -1593,10 +1653,27 @@ matched, so a forced bold read the same as a forced strikethrough."
 (ert-deftest carve-test-smart-typography ()
   "Every run the renderer replaces carries the typographic face."
   (dolist (run '("---" "--" "..." "-->" "<--" "<-->" "<=>" "<==" "==>"
-                 "!=" "<=" ">=" "(c)" "(r)" "(tm)" "+-" "{--}"))
+                 "!=" "<=" ">=" "(tm)" "+-" "{--}"))
     (should (carve-test--face-includes
              (carve-test--face-at (concat "a " run " b\n") run)
              'carve-typographic-face))))
+
+(ert-deftest carve-test-retired-replacements-are-text ()
+  "`(c)', `(r)' (carve#4808) and the single-hyphen arrows (carve#4815) are text."
+  (dolist (run '("(c)" "(r)" "->" "<-" "<->"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat "a " run " b\n") run)
+                 'carve-typographic-face))))
+
+(ert-deftest carve-test-arrow-needs-its-exact-run ()
+  "A hyphen run longer than the arrow's is a dash run (CARVE-P3-022)."
+  (should (equal (carve-test--text-with-face "a--->b\n" 'carve-typographic-face)
+                 "---"))
+  (should (equal (carve-test--text-with-face "a<---b\n" 'carve-typographic-face)
+                 "---"))
+  (should (equal (carve-test--text-with-face "a <--> b --> c <-- d\n"
+                                             'carve-typographic-face)
+                 "<-->--><--")))
 
 (ert-deftest carve-test-braced-en-dash-is-not-a-deletion ()
   "`{--}' is an EN DASH, not an empty deletion (markup-carve/carve#1447).

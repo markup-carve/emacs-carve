@@ -307,6 +307,14 @@ the region that matcher paints, and two spellings of one rule drift.")
 ;; and a caption belongs to the block above it.  These helpers read the lines
 ;; above to answer that, the way the engine does.
 
+(defconst carve--thematic-break-re
+  (rx (zero-or-more (in " \t"))
+      (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)
+          ;; Single spaces only: `*  *  *' is a nested list, `_ _ _' text.
+          (seq "-" (>= 2 " -")) (seq "*" (>= 2 " *")))
+      (zero-or-more (in " \t")) line-end)
+  "A thematic break line (carve#4814).")
+
 (defconst carve--list-marker-re
   (rx (or (in "-*")
           (seq (or (one-or-more digit) (one-or-more (in "ivxlcdmIVXLCDM"))
@@ -322,7 +330,19 @@ the region that matcher paints, and two spellings of one rule drift.")
   "One or more block quote markers at the start of a line.")
 
 (defconst carve--marker-line-re
-  (concat "[ \t]*" carve--list-marker-re " +[^ \t\n]")
+  (rx (zero-or-more (in " \t"))
+      (or (seq (or (in "-*")
+                   (seq (one-or-more digit) (in ".)"))
+                   (seq (or (one-or-more (in "ivxlcdmIVXLCDM")) (in "a-zA-Z")) ")")
+                   ".")
+               (opt "{" (zero-or-more (not (in "}\n"))) "}")
+               (one-or-more " "))
+          ;; Initials are not markers (carve#4811): a letter or roman marker
+          ;; with a dot needs two spaces, so `J. R. R. Tolkien' is prose.
+          (seq (or (one-or-more (in "ivxlcdmIVXLCDM")) (in "a-zA-Z")) "."
+               (opt "{" (zero-or-more (not (in "}\n"))) "}")
+               "  " (zero-or-more " ")))
+      (not (in " \t\n")))
   "A line opening with a list marker and content.")
 
 (defconst carve--block-line-re
@@ -335,7 +355,7 @@ the region that matcher paints, and two spellings of one rule drift.")
                    (seq "|" (zero-or-more not-newline) "|" (zero-or-more (in " \t")) line-end)
                    "%%"
                    (seq "{" (zero-or-more not-newline) "}" (zero-or-more (in " \t")) line-end)
-                   (seq (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)) (zero-or-more (in " \t")) line-end)
+                   (regexp carve--thematic-break-re)
                    (seq (opt "*") "[" (opt "^") (one-or-more (not (in "]\n"))) "]: ")))))
   "A line opening a block that ends a paragraph.")
 
@@ -391,6 +411,21 @@ quote the walk reads the lines behind the same markers."
         (forward-line 1))
       (eq state 'para))))
 
+(defun carve--fontify-name (sigil limit)
+  "Search for a mention or tag with SIGIL between point and LIMIT."
+  (let ((re (rx-to-string
+             `(seq (or bol space (in "(["))
+                   (group ,sigil (one-or-more (in "a-zA-Z0-9_-"))
+                          (zero-or-more "." (one-or-more (in "a-zA-Z0-9_-")))))
+             t))
+        found)
+    (while (and (not found) (re-search-forward re limit t))
+      (when (string-match-p "[a-zA-Z]" (match-string 1))
+        (setq found t))
+      ;; Resume after the sigil: a later name on the line may still qualify.
+      (unless found (goto-char (1+ (match-beginning 1)))))
+    found))
+
 (defun carve--fontify-list-marker (re limit)
   "Search for RE between point and LIMIT where a list marker opens an item."
   (let (found)
@@ -398,7 +433,8 @@ quote the walk reads the lines behind the same markers."
       (let ((data (match-data)))
         (save-excursion
           (beginning-of-line)
-          (unless (carve--in-paragraph-p)
+          (unless (or (looking-at carve--thematic-break-re)
+                      (carve--in-paragraph-p))
             (setq found t)))
         (set-match-data data)))
     found))
@@ -1881,15 +1917,22 @@ Without one the line is paragraph text, inside a quote or out of it."
      (2 'carve-admonition-face))
 
     ;; Table.
-    ;; The header marker |= |=> |=~ and the plain pipes, on a table row only:
-    ;; a line that opens with a pipe and ends in one, at the top level or
-    ;; inside a quote.  A `|' in prose (`a | b') or a row with no closing pipe
-    ;; is text.
+    ;; The pipes, the header marker `|=' and a cell's alignment, on a table
+    ;; row only: a line that opens with a pipe and ends in one, at the top
+    ;; level or inside a quote.  A `|' in prose (`a | b') or a row with no
+    ;; closing pipe is text.  Alignment leads a glued brace block (`|={>}',
+    ;; `|{~v .x}', carve#5091); the bare 0.1.13 prefix (`|=>') is deprecated
+    ;; but still read.
     (,(rx line-start (zero-or-more (in " \t"))
           (zero-or-more ">" " " (zero-or-more (in " \t")))
           (group "|" (zero-or-more not-newline) "|")
           (zero-or-more (in " \t")) line-end)
-     (,(rx (group "|" (opt "=") (opt (in "<>~"))))
+     (,(rx (group "|" (opt "=")
+                  (opt (or (seq "{" (or (seq (in "<>~") (opt (in "^~v")))
+                                        (seq "?" (in "^~v")))
+                                (opt " " (zero-or-more (not (in "{}|\n"))))
+                                "}")
+                           (seq (in "<>~") (opt (in "^~v")))))))
       (progn (goto-char (match-beginning 1)) (match-end 1))
       nil
       (1 'carve-table-face)))
@@ -1990,12 +2033,19 @@ Without one the line is paragraph text, inside a quote or out of it."
        (carve--fontify-list-marker
         ,(rx line-start (zero-or-more (in " \t"))
              (zero-or-more ">" " " (zero-or-more (in " \t")))
-             (group (or (seq (or (one-or-more digit)
-                                 (one-or-more (in "ivxlcdmIVXLCDM"))
-                                 (in "a-zA-Z"))
-                             (in ".)"))
-                        "."))
-             (or (seq (one-or-more " ") (not (in " \t\n"))) "{"))
+             (or (seq (group-n 1 (or (seq (one-or-more digit) (in ".)"))
+                                     (seq (or (one-or-more (in "ivxlcdmIVXLCDM"))
+                                              (in "a-zA-Z"))
+                                          ")")
+                                     "."))
+                      (or (seq (one-or-more " ") (not (in " \t\n"))) "{"))
+                 ;; Initials are not markers (carve#4811): a letter or roman
+                 ;; marker with a dot needs two spaces.
+                 (seq (group-n 1 (or (one-or-more (in "ivxlcdmIVXLCDM"))
+                                     (in "a-zA-Z"))
+                               ".")
+                      (opt "{" (zero-or-more (not (in "}\n"))) "}")
+                      "  " (zero-or-more " ") (not (in " \t\n")))))
         limit))
      (1 'carve-list-marker-face))
 
@@ -2427,14 +2477,11 @@ Without one the line is paragraph text, inside a quote or out of it."
      (1 'carve-markup-face))
 
     ;; Mentions and tags (word boundary).  A dot is interior only: in
-    ;; `ping @markus.' the dot is sentence punctuation (`dotted_name').
-    (,(rx (or bol space (in "(["))
-          (group "@" (one-or-more (in "a-zA-Z0-9_-"))
-                 (zero-or-more "." (one-or-more (in "a-zA-Z0-9_-")))))
+    ;; `ping @markus.' the dot is sentence punctuation (`dotted_name').  The
+    ;; name holds an ASCII letter, so `#123' and `@5' are text (carve#4809).
+    ((lambda (limit) (carve--fontify-name "@" limit))
      (1 'carve-mention-face))
-    (,(rx (or bol space (in "(["))
-          (group "#" (one-or-more (in "a-zA-Z0-9_-"))
-                 (zero-or-more "." (one-or-more (in "a-zA-Z0-9_-")))))
+    ((lambda (limit) (carve--fontify-name "#" limit))
      (1 'carve-tag-face))
 
     ;; Extension inline: :name[content]
@@ -2458,9 +2505,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; Thematic break.  Leading whitespace is allowed: a break can open inside
     ;; a container, where the content column is not zero, and Carve has no
     ;; indented code block to disambiguate against.
-    (,(rx line-start (zero-or-more (in " \t"))
-          (group (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)))
-          (zero-or-more space) line-end)
+    (,(rx line-start (group (regexp carve--thematic-break-re)))
      (1 'carve-markup-face))
 
     ;; THE TYPOGRAPHIC REPLACEMENTS (PART 9 S8).  Every rule below matches a run the
@@ -2484,8 +2529,14 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx (group "{--}"))
      (1 'carve-typographic-face))
 
-    ;; Smart arrows: <--> <-- --> <=> <== ==>, and the deprecated <-> <- ->
-    (,(rx (group (or "<-->" "<--" "-->" "<=>" "<==" "==>" "<->" "<-" "->")))
+    ;; Smart arrows: <--> <-- --> <=> <== ==>.  A hyphen arrow needs its exact
+    ;; run, so `--->' and `<---' are dash runs; `->', `<-' and `<->' are text
+    ;; (CARVE-P3-022, carve#4815).
+    (,(rx (or bol (not (in "-"))) (group (or "<-->" "-->")))
+     (1 'carve-typographic-face))
+    (,(rx (group "<--") (or eol (not (in "->"))))
+     (1 'carve-typographic-face))
+    (,(rx (group (or "<=>" "<==" "==>")))
      (1 'carve-typographic-face))
 
     ;; Comparison: != <= >=
@@ -2501,8 +2552,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx (group "..."))
      (1 'carve-typographic-face))
 
-    ;; Typographic symbols: (c) (r) (tm) +-
-    (,(rx (group (or "(c)" "(r)" "(tm)" "+-")))
+    ;; Typographic symbols: (tm) +-.  `(c)' and `(r)' are text (carve#4808).
+    (,(rx (group (or "(tm)" "+-")))
      (1 'carve-typographic-face)))
   "Font-lock keywords for `carve-mode'.")
 
@@ -2539,17 +2590,29 @@ Without one the line is paragraph text, inside a quote or out of it."
 ;; seed the very rows they deny - `paragraph' read as implemented, citing the
 ;; line that says it is not.
 
+(defun carve--frontmatter-end ()
+  "End of the frontmatter block the buffer opens with, or nil.
+The opener is `---', one optional space and an optional format token;
+`---  yaml' is text.  Without a closer the block runs to the end of the
+buffer (carve#5016)."
+  (save-excursion
+    (save-match-data
+      (goto-char (point-min))
+      (when (looking-at (rx "---" (opt (opt " ") (one-or-more (in "a-zA-Z0-9")))
+                            (zero-or-more (in " \t")) line-end))
+        (forward-line 1)
+        (if (re-search-forward (rx line-start "---" (zero-or-more (in " \t")) line-end)
+                               nil t)
+            (point)
+          (point-max))))))
+
 (defun carve--fontify-frontmatter (limit)
   "Fontify a leading frontmatter block between point and LIMIT.
 Only matches when the block starts on the first line of the buffer."
-  (when (and (bobp)
-             (save-excursion
-               (goto-char (point-min))
-               (looking-at (rx line-start "---" (zero-or-more (in "a-zA-Z ")) line-end))))
-    (goto-char (point-min))
-    (forward-line 1)
-    (when (re-search-forward (rx line-start "---" (zero-or-more space) line-end) limit t)
-      (set-match-data (list (point-min) (min (point) limit)))
+  (let ((end (and (bobp) (carve--frontmatter-end))))
+    (when end
+      (goto-char (min end limit))
+      (set-match-data (list (point-min) (point)))
       t)))
 
 ;;;; Syntax propertizing
@@ -2764,6 +2827,12 @@ to the end of its paragraph."
     (beginning-of-line)
     (while (< (point) end)
       (cond
+       ;; A frontmatter body is metadata, not Carve: no `%%' comment in it.
+       ((and (bobp) (carve--frontmatter-end))
+        (let ((fm (min end (carve--frontmatter-end))))
+          (carve--inert-percent (point) fm)
+          (goto-char fm)
+          (forward-line 1)))
        ;; THE TWO PASSES AGREE ON WHAT AN UNTERMINATED FENCE IS.  This one
        ;; used to make an unterminated opener's body verbatim to the end of
        ;; the buffer at ANY indent, while the font-lock matcher painted only
@@ -2862,6 +2931,16 @@ every one of them its opener and its closer."
     ;; one is handed no opener and paints the body as ordinary markup.  That is
     ;; the shape a whole-buffer test cannot see, because there the region IS
     ;; the buffer and the bug never fires (markup-carve/emacs-carve#27).
+    ;; Frontmatter is matched from its first line, and an unclosed one runs to
+    ;; the end of the buffer.
+    (let ((fm (carve--frontmatter-end)))
+      (when (and fm (< font-lock-beg fm))
+        (when (> font-lock-beg (point-min))
+          (setq font-lock-beg (point-min)
+                changed t))
+        (when (< font-lock-end fm)
+          (setq font-lock-end fm
+                changed t))))
     (let ((open (carve--unterminated-fence-start font-lock-end)))
       (when open
         (when (> font-lock-beg open)
@@ -2881,14 +2960,17 @@ re-propertized on demand, so END needs no widening."
   (let ((new (save-excursion
                (goto-char start)
                (beginning-of-line)
-               (let ((region (carve--verbatim-region-at (point))))
-                 (if region
-                     (car region)
+               (let ((region (carve--verbatim-region-at (point)))
+                     (fm (carve--frontmatter-end)))
+                 (cond
+                  ((and fm (< (point) fm)) (point-min))
+                  (region (car region))
+                  (t
                    (while (and (not (bobp))
                                (not (looking-at carve--blank-line-re)))
                      (forward-line -1))
                    (let ((inside (carve--verbatim-region-at (point))))
-                     (if inside (car inside) (point))))))))
+                     (if inside (car inside) (point)))))))))
     (when (< new start)
       (cons new end))))
 
