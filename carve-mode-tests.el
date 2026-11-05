@@ -629,6 +629,15 @@ the closing braces as a selector."
            (carve-test--face-at "hi @alice there\n" "@alice")
            'carve-mention-face)))
 
+(ert-deftest carve-test-mention-and-tag-end-before-a-trailing-dot ()
+  "A dot is interior to a name; a trailing one is sentence punctuation."
+  (should (equal (carve-test--text-with-face "ping @markus. ok\n" 'carve-mention-face)
+                 "@markus"))
+  (should (equal (carve-test--text-with-face "hi @john.doe there\n" 'carve-mention-face)
+                 "@john.doe"))
+  (should (equal (carve-test--text-with-face "see #release-1.0.\n" 'carve-tag-face)
+                 "#release-1.0")))
+
 (ert-deftest carve-test-symbol ()
   "A `:name:' symbol shortcode at a word boundary is fontified."
   (should (carve-test--face-includes
