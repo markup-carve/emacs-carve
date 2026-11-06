@@ -41,18 +41,23 @@ files.
   the line block, the local hard-break block, and the composite figure
   (`::: |`, `::: \` and `::: figure`).
 - Block-attribute lines `{#id .class key=val}` and inline attribute blocks.
-- Tables: `|`, header `|=`, alignment `|=>` / `|=~`, rowspan `^`, colspan `<`.
+- Tables: `|`, header `|=`, cell alignment in braces (`|={>}`, `|{~v .x}`),
+  rowspan `^`, colspan `<`. The 0.1.13 prefixes `|=>` / `|=~` are deprecated
+  but still highlighted.
 - Footnotes: references `[^id]`, inline footnotes `^[text]`, and definitions
   `[^id]: ...`.
 - Math: inline `` $`...` ``, display `` $$`...` ``, and fenced ` ```math `.
-- Frontmatter blocks (`---`, `---toml`, `---json`, ...) at the document start.
-- Mentions `@name`, tags `#tag`, inline extensions `:name[content]`, and
+- Frontmatter blocks (`---`, `--- toml`, `---json`, ...) at the document
+  start. Without a closing `---` the block runs to the end of the buffer.
+- Mentions `@name` and tags `#tag` (a name holds a letter, so `#123` is
+  text), inline extensions `:name[content]`, and
   CriticMarkup `{+ins+}` `{-del-}` `{~old~>new~}` `{# comment #}`.
 - The braced (forced) spellings `{*x*}` `{/x/}` `{_x_}` `{~x~}` `{=x=}`, each
   in the face of the mark it means, and the combined `/*bold italic*/`.
 - The typographic replacements: the dash runs `--` and `---`, the ellipsis,
   the arrows `<--` `-->` `<-->` `<==` `==>` `<=>`, the comparison operators
-  `!=` `<=` `>=`, `(c)` `(r)` `(tm)` `+-`, and the braced en dash `{--}`.
+  `!=` `<=` `>=`, `(tm)` `+-`, and the braced en dash `{--}`. `->`, `(c)` and
+  `(r)` stay text.
   These carry `carve-typographic-face`, which marks source the renderer
   replaces with a character you did not type. A hyphen run that opens a word
   after whitespace is a flag rather than a dash, so `git log --oneline` stays
