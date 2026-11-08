@@ -188,13 +188,51 @@ Options:
 
 ```elisp
 (setq carve-lsp-command '("carve-lsp" "--stdio")) ; the server command
-(setq carve-lsp-settings nil)                     ; sent as the `carve' section
+(setq carve-lsp-settings nil)                     ; sent as the `carve' section, set before setup
 (setq carve-lsp-autostart t)                      ; nil registers without hooking
 ```
 
 Setting `carve-lsp-autostart` to `nil` registers the server with the client but
 leaves starting it to you - registration alone is enough if you want it
 available rather than automatic.
+
+## Export
+
+Export comes from carve-lsp, not from `carve-mode`: without the language server
+there is nothing to export with. carve-lsp after 0.1.15 offers three source
+actions on a `.crv` buffer:
+
+| Action | Writes |
+| --- | --- |
+| **Export as Markdown** | `notes.md` next to `notes.crv` |
+| **Export as HTML** | `notes.html` next to `notes.crv` |
+| **Export as PDF** | `notes.pdf` next to `notes.crv` |
+
+Pick one with `M-x eglot-code-actions` (eglot) or `M-x lsp-execute-code-action`
+(lsp-mode). The Markdown and HTML actions are offered only to a client that can
+create files from a workspace edit. lsp-mode can; the eglot that ships with
+Emacs 29 cannot, so there the menu shows only **Export as PDF**. If a text
+export leaves the target as an unsaved buffer, save it to write the file.
+
+**Export as PDF** is run by the server and writes the file itself. It uses
+`crv2pdf` from [carve-pdf](https://github.com/markup-carve/carve-pdf) when that
+is on `PATH` (clone it and run `make install`), which gives the better page
+layout. Otherwise it prints the rendered HTML with an installed Chrome,
+Chromium or Edge in headless mode. Neither tool comes with carve-lsp. To point
+at a specific executable, set the `pdf` keys in `carve-lsp-settings` before
+calling `carve-lsp-setup`:
+
+```elisp
+(setq carve-lsp-settings
+      '((pdf . ((crv2pdfPath . "/path/to/crv2pdf")
+                (browserPath . "/path/to/chromium")))))
+(carve-lsp-setup)
+```
+
+They reach the server as `carve.pdf.crv2pdfPath` and `carve.pdf.browserPath`
+in its initialization options. Set only the key you need: a configured
+`crv2pdfPath` is always used, and `browserPath` applies only when no `crv2pdf`
+is found. A failed export shows the tool's error output.
 
 ## Known limitations
 
