@@ -147,6 +147,26 @@ find-references to one folder, which is the failure this resolves."
       (carve-mode)
       (should-not (carve-lsp--maybe-start)))))
 
+;; The server reads only the `carve' key of its initialization options.
+(ert-deftest carve-lsp-settings-reach-eglot-under-the-carve-key ()
+  (skip-unless (require 'eglot nil t))
+  (carve-lsp-test--with-server
+    (let ((carve-lsp-command (list "carve-lsp" "--stdio"))
+          (carve-lsp-settings '((pdf . ((crv2pdfPath . "/opt/crv2pdf")))))
+          (eglot-server-programs nil)
+          (carve-mode-hook nil))
+      (should (eq 'eglot (carve-lsp-setup)))
+      (let* ((contact (cdr (assq 'carve-mode eglot-server-programs)))
+             (options (plist-get (cddr contact) :initializationOptions)))
+        (should (equal (seq-take contact 2) (list "carve-lsp" "--stdio")))
+        (should (functionp options))
+        (should (equal (json-serialize (funcall options nil))
+                       "{\"carve\":{\"pdf\":{\"crv2pdfPath\":\"/opt/crv2pdf\"}}}"))))))
+
+(ert-deftest carve-lsp-initialization-options-are-nil-without-settings ()
+  (let ((carve-lsp-settings nil))
+    (should-not (carve-lsp--initialization-options))))
+
 (provide 'carve-lsp-tests)
 
 ;;; carve-lsp-tests.el ends here

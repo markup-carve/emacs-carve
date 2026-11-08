@@ -89,8 +89,9 @@ exactly `carve-lsp'; `--stdio' is how it speaks."
 
 (defcustom carve-lsp-settings nil
   "Settings sent to the server under the `carve' section.
-An alist, serialized as JSON.  See the carve-lsp README for the keys -
-`formatter', `severities', and the include-resolution options."
+An alist, serialized as JSON and passed as LSP initialization options.
+See the carve-lsp README for the keys - `formatter', `severities', the
+include-resolution options and `pdf'.  Set it before `carve-lsp-setup'."
   :type '(alist :key-type symbol :value-type sexp)
   :group 'carve-lsp)
 
@@ -119,10 +120,20 @@ narrows them to one folder."
     (or (locate-dominating-file start ".git")
         start)))
 
+(defun carve-lsp--initialization-options (&optional _server)
+  "Return `carve-lsp-settings' wrapped in the `carve' section, or nil."
+  (when carve-lsp-settings
+    (list (cons 'carve carve-lsp-settings))))
+
 (defun carve-lsp--register-eglot ()
   "Register the server with eglot.  Return non-nil on success."
   (when (require 'eglot nil t)
-    (let ((entry (cons 'carve-mode carve-lsp-command)))
+    (let ((entry (cons 'carve-mode
+                       (if carve-lsp-settings
+                           (append carve-lsp-command
+                                   (list :initializationOptions
+                                         #'carve-lsp--initialization-options))
+                         carve-lsp-command))))
       ;; Replace rather than push: calling setup twice must not leave two
       ;; entries, and a reader who has customized `carve-lsp-command' between
       ;; calls should get the new command rather than the first one to win.
@@ -148,7 +159,7 @@ narrows them to one folder."
       :new-connection (lsp-stdio-connection (lambda () carve-lsp-command))
       :activation-fn (lsp-activate-on "carve")
       :server-id 'carve-lsp
-      :initialization-options (lambda () carve-lsp-settings)))
+      :initialization-options #'carve-lsp--initialization-options))
     t))
 
 ;;;###autoload
