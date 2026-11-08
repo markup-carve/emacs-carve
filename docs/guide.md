@@ -230,7 +230,9 @@ calling `carve-lsp-setup`:
 ```
 
 They reach the server as `carve.pdf.crv2pdfPath` and `carve.pdf.browserPath`
-in its initialization options. A failed export shows the tool's error output.
+in its initialization options. Set only the key you need: a configured
+`crv2pdfPath` is always used, and `browserPath` applies only when no `crv2pdf`
+is found. A failed export shows the tool's error output.
 
 ## Known limitations
 
