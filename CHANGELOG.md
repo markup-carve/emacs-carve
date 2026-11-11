@@ -8,6 +8,22 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+## [0.1.11] - 2026-11-11
+
+Highlighting follows the Carve 0.1.14 spec readings, and carve-lsp settings reach the server.
+
+### Fixes
+
+- `carve-lsp-settings` reaches carve-lsp from eglot and lsp-mode: both clients send it under the `carve` key the server reads (#79).
+- A trailing dot after a mention or tag name is sentence punctuation, not part of the name (#75).
+
+### Improvements
+
+- Highlighting follows the Carve 0.1.14 readings: braced cell alignment (`|={>}`), frontmatter that runs to the end of the buffer when it has no closer, spaced thematic breaks, `->`, `<-`, `(c)` and `(r)` as text, mention and tag names that need an ASCII letter, and two spaces after a letter or roman dot marker (#76).
+- The guide documents the carve-lsp export actions, including Export as PDF, and the `carve.pdf.crv2pdfPath` and `carve.pdf.browserPath` options (#79).
+
+**Full Changelog**: https://github.com/markup-carve/emacs-carve/compare/0.1.10...0.1.11
+
 ## [0.1.10] - 2026-10-24
 
 The Emacs package now carries the attribution header required for MELPA submission.
