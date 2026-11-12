@@ -8,7 +8,7 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
-## [0.1.11] - 2026-11-11
+## [0.1.11] - 2026-11-12
 
 Highlighting follows the Carve 0.1.14 spec readings, and carve-lsp settings reach the server.
 
