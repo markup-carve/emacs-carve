@@ -37,9 +37,9 @@
 ;; highlighting, a comment syntax, an imenu index of headings, outline support,
 ;; and an optional preview command for `.crv' files.
 ;;
-;; The font-lock rules cover the core Carve constructs: ATX headings, the
-;; mnemonic inline emphasis family (`/italic/', `*bold*', `_underline_',
-;; `~strike~', `=highlight=', and the brace forms, including superscript
+;; The font-lock rules cover the core Carve 0.2 constructs: `=' and `#'
+;; headings, the inline emphasis family (`/italic/', `*bold*', the braced
+;; `{_underline_}', `{~strike~}' and `{=highlight=}', including superscript
 ;; `{^...^}' and subscript `{,...,}'), inline literals, inline and raw inline
 ;; code, links, autolinks, reference links and definitions, images,
 ;; cross-references, lists (bullet, ordered, task), definition lists,
@@ -283,7 +283,7 @@ the author did not type."
 
 (defconst carve--verbatim-fence-re
   (rx line-start (zero-or-more (in " \t"))
-      (group (or (>= 3 ?`) (>= 3 ?~)))
+      (group (>= 3 ?`))
       (zero-or-more not-newline) line-end)
   "Match a line that opens a code, raw, or math fence.
 Group 1 is the delimiter run.  The same shape as the matcher in
@@ -309,11 +309,11 @@ the region that matcher paints, and two spellings of one rule drift.")
 
 (defconst carve--thematic-break-re
   (rx (zero-or-more (in " \t"))
-      (or (>= 3 ?-) (>= 3 ?*) (>= 3 ?_)
-          ;; Single spaces only: `*  *  *' is a nested list, `_ _ _' text.
-          (seq "-" (>= 2 " -")) (seq "*" (>= 2 " *")))
+      ;; Stars only, unspaced: `---' and `___' are text and `* * *' a nested
+      ;; list in 0.2 (U-044, U-045).
+      (>= 3 ?*)
       (zero-or-more (in " \t")) line-end)
-  "A thematic break line (carve#4814).")
+  "A thematic break line.")
 
 (defconst carve--list-marker-re
   (rx (or (in "-*")
@@ -346,10 +346,10 @@ the region that matcher paints, and two spellings of one rule drift.")
   "A line opening with a list marker and content.")
 
 (defconst carve--block-line-re
-  (rx (or (seq (** 1 6 ?#) (one-or-more " ") (not (in " \t\n")))
+  (rx (or (seq (or (** 1 6 ?=) (** 1 6 ?#)) (one-or-more " ") (not (in " \t\n")))
           (seq (zero-or-more (in " \t"))
                (or (seq ">" (or " " line-end))
-                   (>= 3 ?`) (>= 3 ?~)
+                   (>= 3 ?`)
                    (>= 3 ?:)
                    (seq "::" (one-or-more " ") (not (in " \t\n")))
                    (seq "|" (zero-or-more not-newline) "|" (zero-or-more (in " \t")) line-end)
@@ -359,27 +359,56 @@ the region that matcher paints, and two spellings of one rule drift.")
                    (seq (opt "*") "[" (opt "^") (one-or-more (not (in "]\n"))) "]: ")))))
   "A line opening a block that ends a paragraph.")
 
+(defconst carve--interrupter-line-re
+  (rx (zero-or-more (in " \t"))
+      (or (>= 3 ?`) (>= 3 ?:) (>= 3 ?%)
+          (seq "|" (zero-or-more not-newline) "|" (zero-or-more (in " \t")) line-end)
+          (regexp carve--thematic-break-re)))
+  "A line that ends the paragraph above it.
+In 0.2 only fences, `:::', `%%%', table rows and breaks interrupt; a
+heading, quote, attribute line, definition or term line directly under
+text is a lazy line of the paragraph (U-001 to U-010).")
+
+(defconst carve--marker-term-re
+  (rx (zero-or-more (in " \t")) (regexp carve--list-marker-re) (one-or-more " ")
+      "::" (one-or-more " "))
+  "A list marker line whose item opens with a term.")
+
 (defun carve--line-kind ()
   "Classify the line at point for the paragraph walk.
-One of `blank', `block', `marker', `caption', `text' or `indented'."
+One of `blank', `block', `opener', `comment', `marker', `caption', `text'
+or `indented'."
   (cond
    ((looking-at carve--blank-line-re) 'blank)
-   ((looking-at carve--block-line-re) 'block)
+   ((looking-at carve--interrupter-line-re) 'block)
+   ;; A comment-only line renders nothing and does not end a paragraph.
+   ((looking-at (rx (zero-or-more (in " \t")) "%%")) 'comment)
+   ((looking-at carve--block-line-re) 'opener)
    ((looking-at carve--marker-line-re) 'marker)
    ((looking-at (rx (zero-or-more (in " \t")) "^" (one-or-more " ") (not (in " \t\n"))))
     'caption)
    ((looking-at (rx (in " \t"))) 'indented)
    (t 'text)))
 
-(defun carve--in-paragraph-p ()
+(defun carve--in-paragraph-p (&optional outside)
   "Non-nil when the line at point continues a paragraph opened above it.
-A paragraph opens on an unindented text line and holds marker and caption
-lines; a block line or a blank line ends it.  A marker after a list item, or
-after the item's lazy continuation, opens the next item instead.  Inside a
-quote the walk reads the lines behind the same markers."
+OUTSIDE is as `carve--paragraph-state' takes it."
+  (eq (carve--paragraph-state outside) 'para))
+
+(defun carve--paragraph-state (&optional outside)
+  "Return `para', `list' or `term' when the line at point continues text.
+`list' is the text of a list item, `term' that of a term or description,
+`para' a paragraph, nil none of them.
+A paragraph opens on an unindented text line and holds marker, caption and
+block-opener lines; an interrupter or a blank line ends it.  A marker after
+a list item, or after the item's lazy continuation, opens the next item
+instead.  Inside a quote the walk reads the lines behind the same markers;
+with OUTSIDE non-nil it reads the lines as they stand, which is how a quote
+line asks whether it is a lazy line of the text above."
   (save-excursion
     (beginning-of-line)
-    (let* ((prefix (and (looking-at carve--quote-prefix-re)
+    (let* ((prefix (and (not outside)
+                        (looking-at carve--quote-prefix-re)
                         (regexp-quote (match-string 0))))
            (here (line-beginning-position))
            (inside (lambda ()
@@ -404,12 +433,17 @@ quote the walk reads the lines behind the same markers."
           (setq state
                 (pcase (carve--line-kind)
                   ((or 'blank 'block) nil)
-                  ('marker (if (eq state 'para) 'para 'list))
+                  ('opener (cond ((memq state '(para list term)) state)
+                                 ((looking-at "[ \t]*::") 'term)))
+                  ('comment state)
+                  ('marker (cond ((eq state 'para) 'para)
+                                 ((looking-at carve--marker-term-re) 'term)
+                                 (t 'list)))
                   ('caption state)
                   ('text (or state 'para))
                   ('indented state))))
         (forward-line 1))
-      (eq state 'para))))
+      state)))
 
 (defun carve--fontify-name (sigil limit)
   "Search for a mention or tag with SIGIL between point and LIMIT."
@@ -424,6 +458,19 @@ quote the walk reads the lines behind the same markers."
         (setq found t))
       ;; Resume after the sigil: a later name on the line may still qualify.
       (unless found (goto-char (1+ (match-beginning 1)))))
+    found))
+
+(defun carve--fontify-block-opener (re limit &optional outside)
+  "Search for RE before LIMIT on a line that opens a block.
+A heading, quote, attribute line, definition or term line directly under
+paragraph or item text is text in 0.2 (U-001 to U-010).  OUTSIDE is passed
+to `carve--paragraph-state'."
+  (let (found)
+    (while (and (not found) (re-search-forward re limit t))
+      (let ((data (match-data)))
+        (unless (save-excursion (carve--paragraph-state outside))
+          (setq found t))
+        (set-match-data data)))
     found))
 
 (defun carve--fontify-list-marker (re limit)
@@ -443,7 +490,7 @@ quote the walk reads the lines behind the same markers."
   (rx line-start (zero-or-more (in " \t"))
       (or (seq "|" (zero-or-more not-newline) "|")
           (seq "+" (zero-or-more not-newline) "|")
-          (seq (or (>= 3 ?`) (>= 3 ?~)))
+          (seq (>= 3 ?`))
           (seq ">" (or " " line-end) (zero-or-more not-newline))
           (seq "!" "[" (zero-or-more not-newline))
           (seq "$$`" (zero-or-more not-newline))
@@ -455,9 +502,9 @@ container fence.")
 
 (defun carve--fontify-caption (limit)
   "Search for a caption marker between point and LIMIT.
-A `^ ' line is a caption below a block that takes one, with at most one
-blank line between.  After a heading, a paragraph, a list item or at the
-start of the document it is prose."
+A `^ ' line is a caption directly below a block that takes one; after a
+blank line it is prose (U-063).  After a heading, a paragraph, a list item
+or at the start of the document it is prose too."
   (catch 'caption
     (while (re-search-forward
             (rx line-start (zero-or-more (in " \t"))
@@ -468,10 +515,7 @@ start of the document it is prose."
         (when (save-excursion
                 (beginning-of-line)
                 (and (zerop (forward-line -1))
-                     (or (looking-at carve--caption-host-re)
-                         (and (looking-at carve--blank-line-re)
-                              (zerop (forward-line -1))
-                              (looking-at carve--caption-host-re)))))
+                     (looking-at carve--caption-host-re)))
           (set-match-data data)
           (throw 'caption t))))
     nil))
@@ -611,9 +655,9 @@ term), is left alone.  A quoted paragraph is filled behind its markers."
   ;; job.  `(in " \t")' for the separator and `(not (in " \t\n"))' for the
   ;; first content character - the newline in that set is what makes it bite.
   (rx line-start (zero-or-more (in " \t"))
-      (group (** 1 6 ?#)) (group (one-or-more " "))
+      (group (or (** 1 6 ?=) (** 1 6 ?#))) (group (one-or-more " "))
       (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
-  "Match an ATX heading line (no trailing attribute blocks in Carve).")
+  "Match a heading line: `=' or `#' markers (C2-B-151, C2-B-152).")
 
 (defun carve--closing-fence (from limit char len column)
   "Find a fence closer between FROM and LIMIT, or nil.
@@ -659,7 +703,7 @@ an indented fence at the top level is the cheaper error."
   (catch 'done
     (while (re-search-forward
             (rx line-start (zero-or-more (in " \t"))
-                (group (or (>= 3 ?`) (>= 3 ?~)))
+                (group (>= 3 ?`))
                 (zero-or-more not-newline) line-end)
             limit t)
       (let* ((fence (match-string 1))
@@ -839,7 +883,7 @@ The value is the symbol `failed' when MODE could not be set up.")
   "Return the language word of the fence opener in match group 1, or nil."
   (let ((opener (match-string-no-properties 1)))
     (when (string-match (rx string-start (zero-or-more (in " \t"))
-                            (or (>= 3 ?`) (>= 3 ?~))
+                            (>= 3 ?`)
                             (zero-or-more (in " \t")) (opt "=")
                             (group (not (in " \t{=`~"))
                                    (zero-or-more (not (in " \t{")))))
@@ -1383,17 +1427,6 @@ and a `]' must follow on the same line."
   "Search for a bare italic run between point and LIMIT."
   (carve--fontify-bare-run "/" "/" 'carve-italic-face limit))
 
-(defun carve--fontify-underline-run (limit)
-  "Search for a bare underline run between point and LIMIT."
-  (carve--fontify-bare-run "_" "_" 'carve-underline-face limit))
-
-(defun carve--fontify-strike-run (limit)
-  "Search for a bare strike run between point and LIMIT."
-  (carve--fontify-bare-run "~" "~" 'carve-strike-face limit))
-
-(defun carve--fontify-highlight-run (limit)
-  "Search for a bare highlight run between point and LIMIT."
-  (carve--fontify-bare-run "=" "=" 'carve-highlight-face limit))
 
 ;;;; Font-lock keywords
 
@@ -1440,26 +1473,16 @@ and a `]' must follow on the same line."
           (throw 'found t))))
     nil))
 
-;;;; The continuation marker
+;;;; Description context
 
-;; A LONE `+' IS A MARKER ONLY WHERE IT ATTACHES SOMETHING (PART 9 §17).  It
-;; sits at the marker column of an open list item, description, footnote or
-;; quote and the next line starts a block at that column, or it follows a block
-;; opener on its own line (`- +', `: +', `[^a]: +', `> +').  Anything else is
-;; text, so the decision reads the lines above and the line below.
+;; A `:' line is a description only below a term, so the decision reads the
+;; lines above it.  (0.1's lone `+' continuation marker is text in 0.2,
+;; U-014 to U-017.)
 
 (defconst carve--cm-item-re
   "\\`[ \t]*\\(?:[-*]\\|[0-9]+[.)]\\|[A-Za-z][.)]\\|[ivxlcdmIVXLCDM]+[.)]\\|\\.\\)\\(?: \\|\\'\\)"
   "A list item line, as a string match.")
 
-(defconst carve--cm-opener-re
-  (concat "\\`\\(?:[-*] +\\(?:\\[[] xX_>?-]\\] +\\)?"
-          "\\|\\(?:[0-9]+[.)]\\|[A-Za-z][.)]\\|[ivxlcdmIVXLCDM]+[.)]\\|\\.\\) +"
-          "\\|: +\\|\\[\\^[^]\n]+\\]: +\\|> \\)")
-  "One block opener in front of a first-block `+'.")
-
-(defconst carve--cm-def-re "\\`[ \t]*\\(?:::? \\|\\[\\^[^]\n]+\\]: \\)"
-  "A description, term or footnote line.")
 
 (defconst carve--cm-lookback 200
   "How many lines above a lone `+' are read first to find its container.
@@ -1516,43 +1539,6 @@ A marker takes its space or ends the line: `>>' and `>+' are no markers."
   "LINE with D quote markers stripped, or nil when it is quoted less deep."
   (and (>= (car (carve--cm-depth line)) d) (carve--cm-strip line d)))
 
-(defun carve--cm-paragraph-p (s col)
-  "Non-nil when S is a paragraph line a list item at COL cannot interrupt."
-  (and s (not (carve--cm-blank s))
-       (<= (carve--cm-ind s) col)
-       (not (string-match-p carve--cm-item-re s))
-       (not (string-match-p carve--cm-def-re s))))
-
-(defun carve--cm-quote-first-block (next qd)
-  "Non-nil when NEXT can be the first block of a quote QD deep."
-  (and next (not (carve--cm-blank next))
-       (let ((dc (carve--cm-depth next)))
-         (and (< (car dc) qd)
-              (= (carve--cm-ind (cdr dc)) 0)
-              (not (string-match-p carve--cm-item-re (cdr dc)))))))
-
-(defun carve--cm-hosted-quote-follower (next d indent chain)
-  "Non-nil when NEXT is the first block of a quote opened behind a list item.
-The line is INDENT plus CHAIN, D quotes deep, CHAIN ending in the quote's
-`> '.  NEXT takes it at column 0, at INDENT or at the quote's column, when it
-starts a block other than a list item; the markers are one space apart
-\(markup-carve/carve#3421)."
-  (and next (not (string-match-p "  " chain))
-       (let ((nc (carve--cm-strip next (min d (car (carve--cm-depth next))))))
-         (and nc (not (carve--cm-blank nc))
-              (not (string-match-p "\\`[ \t>]*\\+[ \t]*\\'" nc))
-              (not (string-match-p carve--cm-item-re nc))
-              (memq (carve--cm-ind nc) (list 0 indent (+ indent (length chain) -2)))))))
-
-(defun carve--cm-quote-run-opens-p (lines i d)
-  "Non-nil when no line of the run above line I of LINES is quoted D deep."
-  (let ((j (1- i)) (first t))
-    (while (and first (>= j 0) (not (carve--cm-blank (aref lines j))))
-      (when (>= (car (carve--cm-depth (aref lines j))) d)
-        (setq first nil))
-      (setq j (1- j)))
-    (when (< j 0) (setq carve--cm-hit-top t))
-    first))
 
 (defun carve--cm-term-above-p (lines j d c)
   "Non-nil when the `:' line J of LINES, D quotes deep, follows a term at C.
@@ -1594,103 +1580,6 @@ is reused from the walk cache."
       (dolist (key passed) (puthash key result table)))
     result))
 
-(defun carve--cm-relative (lines i next d c)
-  "Return non-nil when a `+' at column C, D quotes deep, on line I attaches NEXT.
-LINES is the vector of buffer lines that I indexes.
-The container is the nearest open item, description, footnote or quote whose
-marker sits at column C, and NEXT starts a block at that column."
-  (let ((nc (and next (carve--cm-content next d))))
-    (when (and nc (not (carve--cm-blank nc)) (= (carve--cm-ind nc) c))
-      (let ((sibling (and (string-match-p carve--cm-item-re nc) t))
-            (j (1- i)) (lazy nil) (gap nil) (result 'walk)
-            (table (and carve--cm-offsets (carve--cm-cache-table)))
-            passed)
-        (while (eq result 'walk)
-          (let ((cc (if (< j 0)
-                        (progn (setq carve--cm-hit-top t) nil)
-                      (carve--cm-content (aref lines j) d))))
-            (cond
-             ((null cc) (setq result nil))
-             ((carve--cm-blank cc) (setq gap t))
-             ((> (carve--cm-ind cc) c))
-             ((< (carve--cm-ind cc) c) (setq result nil))
-             ((string-match-p "\\`[ \t]*\\+[ \t]*\\'" cc)
-              (when table
-                (let* ((key (list (aref carve--cm-offsets j) d c lazy gap sibling))
-                       (hit (gethash key table 'none)))
-                  (if (eq hit 'none)
-                      (push key passed)
-                    (setq result hit)))))
-             ((string-match-p "\\`[ \t]*>\\(?: \\|\\'\\)" cc) (setq result (not gap)))
-             ((string-match-p carve--cm-item-re cc)
-              ;; A list item next is a sibling, which ends the item instead.
-              (setq result
-                    (and (not sibling)
-                         (not (carve--cm-paragraph-p
-                               (and (> j 0) (carve--cm-content (aref lines (1- j)) d))
-                               c)))))
-             ((string-match-p "\\`[ \t]*: " cc)
-              (setq result (and (not lazy) (carve--cm-term-above-p lines j d c))))
-             ((string-match-p "\\`[ \t]*::" cc) (setq result nil))
-             ((string-match-p "\\`\\[\\^[^]\n]+\\]: " cc)
-              (setq result (and (= c 0) (not lazy))))
-             ((and (> j 0) (carve--cm-blank (aref lines (1- j)))) (setq result nil))
-             (t (setq lazy t)))
-            (setq j (1- j))))
-        (unless carve--cm-hit-top
-          (dolist (key passed) (puthash key result table)))
-        result))))
-
-(defun carve--cm-classify (lines i)
-  "Non-nil when line I of the vector LINES is a continuation marker."
-  (let ((line (aref lines i))
-        (next (and (< (1+ i) (length lines)) (aref lines (1+ i)))))
-    (when (string-match
-           "\\`\\([ \t]*\\)\\(\\(?:> \\)*\\)\\(.*?\\)\\+[ \t]*\\'" line)
-      (let* ((lead (match-string 1 line))
-             (q (match-string 2 line))
-             (chain (match-string 3 line))
-             (d (seq-count (lambda (ch) (eq ch ?>)) q))
-             (rest chain)
-             toks)
-        (while (and (not (string-empty-p rest))
-                    (string-match carve--cm-opener-re rest))
-          (push (match-string 0 rest) toks)
-          (setq rest (substring rest (match-end 0))))
-        (setq toks (nreverse toks))
-        (cond
-         ((and toks (carve--cm-blank rest))
-          (let ((k (car (last toks))))
-            (cond
-             ((and (string-prefix-p ">" k)
-                   (seq-some (lambda (s) (not (string-match-p "\\`\\(?:>\\|:\\|\\[\\^\\)" s)))
-                             toks))
-              (carve--cm-hosted-quote-follower next d (length lead) chain))
-             ((string-prefix-p ">" k)
-              (carve--cm-quote-first-block
-               next (+ d (seq-count (lambda (s) (string-prefix-p ">" s)) toks))))
-             ((string-prefix-p "[^" k)
-              (and next (not (carve--cm-blank next))
-                   (= (carve--cm-ind next) 0)
-                   (not (string-match-p carve--cm-item-re next))))
-             ((string-prefix-p ":" k)
-              (and (carve--cm-term-above-p lines i d (carve--cm-ind (cdr (carve--cm-depth line))))
-                   next (not (carve--cm-blank next))
-                   (not (string-match-p carve--cm-item-re next))))
-             ((string-match-p "\\`\\(?:>\\|\\[\\^\\|:\\)" (car toks)) t)
-             ;; A list item cannot interrupt a paragraph.
-             (t (not (carve--cm-paragraph-p
-                      (and (> i 0) (carve--cm-content (aref lines (1- i)) d))
-                      (length lead)))))))
-         ((not (carve--cm-blank chain)) nil)
-         (t
-          (or (and (> d 0) (string-empty-p chain)
-                   (carve--cm-quote-run-opens-p lines i d)
-                   (carve--cm-quote-first-block next d))
-              (carve--cm-relative lines i next d
-                                  (if (> d 0)
-                                      (length chain)
-                                    (+ (length lead) (length chain)))))))))))
 
 (defun carve--cm-read-lines (fn below)
   "Call FN with the lines above point's line, that line, and BELOW more.
@@ -1716,22 +1605,6 @@ while FN runs off its top and the buffer has more."
                 back (* 2 back))))
       result)))
 
-(defun carve--continuation-marker-p ()
-  "Non-nil when the lone `+' line at point is a continuation marker."
-  (carve--cm-read-lines #'carve--cm-classify 1))
-
-(defun carve--fontify-continuation-marker (limit)
-  "Find the next continuation marker before LIMIT; group 1 is the `+'."
-  (let (found)
-    (while (and (not found)
-                (re-search-forward "^[^\n+]*\\(\\+\\)[ \t]*$" limit t))
-      (let ((data (match-data)))
-        (when (save-match-data
-                (and (not (carve--verbatim-region-at (match-beginning 1)))
-                     (carve--continuation-marker-p)))
-          (setq found t))
-        (set-match-data data)))
-    found))
 
 (defun carve--description-line-p ()
   "Non-nil when the `:' line at point follows a term, as a description does.
@@ -1747,8 +1620,14 @@ Without one the line is paragraph text, inside a quote or out of it."
   "Search for RE before LIMIT where a `::' or `:' line opens a term or description."
   (let (found)
     (while (and (not found) (re-search-forward re limit t))
-      (let ((data (match-data)))
-        (when (save-match-data (carve--description-line-p))
+      (let ((data (match-data))
+            (term (equal (match-string 1) "::")))
+        (when (save-match-data
+                (and (carve--description-line-p)
+                     ;; A term under text is text (U-004, U-009); a `:'
+                     ;; line under a term's lazy line is still its description.
+                     (not (memq (save-excursion (carve--paragraph-state))
+                                (if term '(para list term) '(para list))))))
           (setq found t))
         (set-match-data data)))
     found))
@@ -1783,8 +1662,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     (carve--fontify-frontmatter
      (0 'carve-frontmatter-face keep))
 
-    ;; ATX headings.
-    (,carve--heading-re
+    ;; Headings.
+    ((lambda (limit) (carve--fontify-block-opener carve--heading-re limit))
      (1 'carve-markup-face)
      (3 'carve-heading-face))
 
@@ -1816,12 +1695,15 @@ Without one the line is paragraph text, inside a quote or out of it."
              (item `(or ,lang-item
                         (seq (in ".#") ,ident)
                         (seq ,ident (opt "=" ,value)))))
-        (rx-to-string
-         `(seq line-start (zero-or-more space)
-               (group "{" (zero-or-more space) ,item
-                      (zero-or-more (seq (one-or-more space) ,item))
-                      (zero-or-more space) "}")
-               (zero-or-more space) line-end)))
+        `(lambda (limit)
+           (carve--fontify-block-opener
+            ,(rx-to-string
+              `(seq line-start (zero-or-more space)
+                    (group "{" (zero-or-more space) ,item
+                           (zero-or-more (seq (one-or-more space) ,item))
+                           (zero-or-more space) "}")
+                    (zero-or-more space) line-end))
+            limit)))
      (1 'carve-attribute-face))
 
     ;; Composite figure: a BARE `::: figure' opener (PART 9 §4c,
@@ -1921,18 +1803,16 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; row only: a line that opens with a pipe and ends in one, at the top
     ;; level or inside a quote.  A `|' in prose (`a | b') or a row with no
     ;; closing pipe is text.  Alignment leads a glued brace block (`|={>}',
-    ;; `|{~v .x}', carve#5091); the bare 0.1.13 prefix (`|=>') is deprecated
-    ;; but still read.
+    ;; `|{~v .x}'); the bare 0.1 prefix (`|=>') is cell text in 0.2 (U-056).
     (,(rx line-start (zero-or-more (in " \t"))
           (zero-or-more ">" " " (zero-or-more (in " \t")))
           (group "|" (zero-or-more not-newline) "|")
           (zero-or-more (in " \t")) line-end)
      (,(rx (group "|" (opt "=")
-                  (opt (or (seq "{" (or (seq (in "<>~") (opt (in "^~v")))
-                                        (seq "?" (in "^~v")))
-                                (opt " " (zero-or-more (not (in "{}|\n"))))
-                                "}")
-                           (seq (in "<>~") (opt (in "^~v")))))))
+                  (opt "{" (or (seq (in "<>~") (opt (in "^~v")))
+                               (seq "?" (in "^~v")))
+                       (opt " " (zero-or-more (not (in "{}|\n"))))
+                       "}")))
       (progn (goto-char (match-beginning 1)) (match-end 1))
       nil
       (1 'carve-table-face)))
@@ -1945,8 +1825,11 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; separate (markup-carve/carve#525). Without the lookahead this fontified
     ;; the marker in `>>= operator' and `>=3 items', which the language calls
     ;; prose.
-    (,(rx line-start (zero-or-more (in " \t")) (group ">")
-          (or " " line-end))
+    ((lambda (limit)
+       (carve--fontify-block-opener
+        ,(rx line-start (zero-or-more (in " \t")) (group ">")
+             (or " " line-end))
+        limit t))
      (1 'carve-blockquote-face))
 
     ;; The markers after the first: `> > x' nests, and `- > x' opens a quote on
@@ -1981,7 +1864,7 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; quote prefix in their own rules.
     (,(rx line-start (zero-or-more (in " \t"))
           (one-or-more ">" " " (zero-or-more (in " \t")))
-          (group (** 1 6 ?#)) (one-or-more " ")
+          (group (or (** 1 6 ?=) (** 1 6 ?#))) (one-or-more " ")
           (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
      (1 'carve-markup-face)
      (2 'carve-heading-face))
@@ -2065,15 +1948,6 @@ Without one the line is paragraph text, inside a quote or out of it."
         limit))
      (1 'carve-list-marker-face))
 
-    ;; The CONTINUATION MARKER: a lone `+' that attaches the next block.
-    ;;
-    ;; `continuation_marker = '+', newline` - any character between the `+' and
-    ;; the line end is content, so the marker is the whole line or it is not a
-    ;; marker at all.  A refused one stays text, which is what an unpainted
-    ;; `+' reads as; `carve--continuation-marker-p' holds the rule.
-    (carve--fontify-continuation-marker
-     (1 'carve-markup-face))
-
     ;; A TABLE CONTINUATION ROW: `+' then cells, ending in a pipe.
     ;;
     ;; `continuation_row = '+', table_cell, {'|', table_cell}, '|', newline`.
@@ -2094,8 +1968,11 @@ Without one the line is paragraph text, inside a quote or out of it."
      (1 'carve-markup-face))
 
     ;; Footnote definition: [^id]:
-    (,(rx line-start (zero-or-more (in " \t"))
-          (group "[^" (one-or-more (not (in "]\n"))) "]" ":"))
+    ((lambda (limit)
+       (carve--fontify-block-opener
+        ,(rx line-start (zero-or-more (in " \t"))
+             (group "[^" (one-or-more (not (in "]\n"))) "]" ":"))
+        limit))
      (1 'carve-footnote-face))
 
     ;; Reference definition: [label]: url
@@ -2105,8 +1982,11 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; nearest thing in this file to the words "reference link" - so the
     ;; construct ledger cited it as the evidence that this mode highlights a
     ;; reference LINK, one construct over (markup-carve/emacs-carve#19).
-    (,(rx line-start (zero-or-more (in " \t"))
-          (group "[" (one-or-more (not (in "]\n"))) "]" ":"))
+    ((lambda (limit)
+       (carve--fontify-block-opener
+        ,(rx line-start (zero-or-more (in " \t"))
+             (group "[" (one-or-more (not (in "]\n"))) "]" ":"))
+        limit))
      (1 'carve-footnote-face))
 
     ;; Abbreviation definition: *[TERM]: expansion
@@ -2116,9 +1996,12 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; term.  The term is a SINGLE alphanumeric word (grammar PART 5) - a
     ;; bracketed term holding a space or a dot is not a definition and the line
     ;; stays prose, so the character class is what does the rejecting.
-    (,(rx line-start (zero-or-more (in " \t"))
-          (group "*[" (one-or-more (in "a-zA-Z0-9")) "]" ":")
-          (one-or-more " ") (not (in " \t\n")))
+    ((lambda (limit)
+       (carve--fontify-block-opener
+        ,(rx line-start (zero-or-more (in " \t"))
+             (group "*[" (one-or-more (in "a-zA-Z0-9")) "]" ":")
+             (one-or-more " ") (not (in " \t\n")))
+        limit))
      (1 'carve-markup-face))
 
     ;; Footnote reference.
@@ -2343,14 +2226,6 @@ Without one the line is paragraph text, inside a quote or out of it."
     (,(rx (group "{-" (minimal-match (one-or-more not-newline)) "-}"))
      (1 'carve-critic-face))
 
-    ;; Substitution: {~old~>new~}
-    ;;
-    ;; A `{~x~}' with NO `~>' arrow is a forced strikethrough, not a
-    ;; substitution, so the arrow is required.
-    (,(rx (group "{~" (minimal-match (zero-or-more not-newline)) "~>"
-                 (minimal-match (zero-or-more not-newline)) "~}"))
-     (1 'carve-critic-face))
-
     ;; Editorial comment: {# comment #}
     ;; A matcher for the same reason as the delimited comment above: the run
     ;; is bounded by its paragraph, not by its line.
@@ -2383,15 +2258,15 @@ Without one the line is paragraph text, inside a quote or out of it."
 
     ;; Forced underline: {_..._}
     (,(rx (group "{_" (minimal-match (one-or-more not-newline)) "_}"))
-     (1 'carve-underline-face))
+     (1 'carve-underline-face keep))
 
     ;; Forced strike: {~...~}
     (,(rx (group "{~" (minimal-match (one-or-more not-newline)) "~}"))
-     (1 'carve-strike-face))
+     (1 'carve-strike-face keep))
 
     ;; Forced highlight: {=...=}
     (,(rx (group "{=" (minimal-match (one-or-more not-newline)) "=}"))
-     (1 'carve-highlight-face))
+     (1 'carve-highlight-face keep))
 
     ;; Superscript: {^...^}
     (,(rx (group "{^" (minimal-match (one-or-more not-newline)) "^}"))
@@ -2446,12 +2321,8 @@ Without one the line is paragraph text, inside a quote or out of it."
      (1 'carve-bold-face keep))
     (carve--fontify-italic-run
      (1 'carve-italic-face keep))
-    (carve--fontify-underline-run
-     (1 'carve-underline-face keep))
-    (carve--fontify-strike-run
-     (1 'carve-strike-face keep))
-    (carve--fontify-highlight-run
-     (1 'carve-highlight-face keep))
+    ;; Bare `_x_', `~x~' and `=x=' are text in 0.2 (U-065 to U-067); only
+    ;; the braced spellings below mark underline, strike and highlight.
 
     ;; Citation groups: [+@key, loc; @key2] — highlight @key and the +/- markers.
     ;; A citation bracket has no (url)/[ref]/{attr} tail.
@@ -3078,13 +2949,13 @@ installed, signal a user error instead of failing obscurely."
     ("html" . "html") ("htm" . "html")
     ("djot" . "djot") ("dj" . "djot")
     ("bbcode" . "bbcode") ("bb" . "bbcode"))
-  "Alist mapping a source file extension to a `carve migrate --from' format.
+  "Alist mapping a source file extension to a `carve import --from' format.
 Used by `carve-import-file' to pick the source format."
   :type '(alist :key-type string :value-type string)
   :group 'carve)
 
 (defun carve--import-format (file)
-  "Return the `carve migrate' format for FILE by extension, or nil."
+  "Return the `carve import' format for FILE by extension, or nil."
   (let ((ext (file-name-extension file)))
     (and ext (cdr (assoc (downcase ext) carve-import-formats)))))
 
@@ -3108,7 +2979,7 @@ When ASK-FORMAT is non-nil, prompt for the source format."
 
 ;;;###autoload
 (defun carve-import-file (file &optional format)
-  "Convert FILE to a sibling `.crv' file with `carve migrate' and visit it.
+  "Convert FILE to a sibling `.crv' file with `carve import' and visit it.
 FORMAT is the source format (markdown, html, djot or bbcode); when nil it
 is derived from the extension via `carve-import-formats'.  Interactively,
 FILE defaults to the current buffer's file when it has a known extension,
@@ -3136,7 +3007,7 @@ and a prefix argument prompts for FORMAT.  CLI errors are shown in the
           (with-temp-buffer
             (let ((status (call-process carve-command nil
                                         (list (current-buffer) errfile) nil
-                                        "migrate" "--from" format
+                                        "import" "--from" format
                                         ;; Unibyte, so the UTF-8 binding
                                         ;; above does not re-encode it.
                                         (encode-coding-string
@@ -3155,9 +3026,9 @@ and a prefix argument prompts for FORMAT.  CLI errors are shown in the
                       (display-buffer (current-buffer)))))
                 (if (eq status 0)
                     ;; carve-js 0.1.7's npm bin exits 0 without running.
-                    (user-error "`%s migrate' printed nothing; is it the Carve CLI?"
+                    (user-error "`%s import' printed nothing; is it the Carve CLI?"
                                 carve-command)
-                  (user-error "Carve migrate failed (exit %s); see *Carve Import*"
+                  (user-error "Carve import failed (exit %s); see *Carve Import*"
                               status)))))
         (delete-file errfile)))
     (when target-buf
@@ -3195,9 +3066,9 @@ and a prefix argument prompts for FORMAT.  CLI errors are shown in the
   (setq-local comment-start-skip "%%+[ \t]*")
   (setq-local comment-end "")
   (setq-local imenu-create-index-function #'carve--imenu-create-index)
-  ;; Outline support keyed on ATX headings: one to six `#' and a space,
+  ;; Outline support keyed on headings: one to six `=' or `#' and a space,
   ;; outside code and comment blocks.
-  (setq-local outline-regexp "#\\{1,6\\} ")
+  (setq-local outline-regexp "\\(?:=\\{1,6\\}\\|#\\{1,6\\}\\) ")
   (setq-local outline-level (lambda () (- (match-end 0) (match-beginning 0) 1)))
   (when (boundp 'outline-search-function)
     (setq-local outline-search-function #'carve--outline-search))
