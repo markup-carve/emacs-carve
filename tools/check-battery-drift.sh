@@ -5,7 +5,13 @@
 # grammar is checked against the same shapes as every other Carve grammar. A
 # copy that nothing compares is a copy only until someone edits one side, and a
 # stale battery here would pass while the language moved.
+#
+# carve-grammars' `next2` (Carve 0.2) dropped its copy in #903, so this branch
+# compares against the last commit that shipped it. Every shape in it renders
+# the same in the carve-js `next2` engine.
 set -euo pipefail
+
+battery_rev=85c3af1adf1abdace24cf9dd059636de05ff16be
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(dirname "$here")"
@@ -15,7 +21,9 @@ upstream="${CARVE_GRAMMARS_DIR:-}"
 if [[ -z "$upstream" ]]; then
   work="$(mktemp -d)"
   trap 'rm -rf "$work"' EXIT
-  git clone --quiet --depth 1 https://github.com/markup-carve/carve-grammars "$work/cg"
+  git init --quiet "$work/cg"
+  git -C "$work/cg" fetch --quiet --depth 1 https://github.com/markup-carve/carve-grammars "$battery_rev"
+  git -C "$work/cg" checkout --quiet FETCH_HEAD
   upstream="$work/cg"
 fi
 

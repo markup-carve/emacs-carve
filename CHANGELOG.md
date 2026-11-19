@@ -8,6 +8,19 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
+Highlighting, preview and import follow Carve 0.2 on the `next2` branch.
+
+### Breaking
+
+- `carve-import-file` runs `carve import --from FORMAT FILE`, the Carve 0.2 command; the 0.1 `carve migrate` is gone, so import needs a 0.2 CLI.
+- Bare `_x_`, `~x~` and `=x=`, the `{~old~>new~}` substitution, the lone `+` continuation line, `+` bullets, `---` and `___` breaks, spaced breaks, `~~~` fences and the glued `|=>` alignment are no longer highlighted: Carve 0.2 reads them as text.
+
+### Improvements
+
+- `=` headings are highlighted and indexed in imenu and outline, beside `#` headings.
+- A heading, quote, attribute line, definition or term directly under paragraph or item text is shown as text, and a `%%` comment line no longer ends a paragraph, as Carve 0.2 reads them.
+- A caption is highlighted only directly below its block.
+
 ## [0.1.11] - 2026-11-12
 
 Highlighting follows the Carve 0.1.14 spec readings, and carve-lsp settings reach the server.
