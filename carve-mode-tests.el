@@ -2369,6 +2369,21 @@ BODY is called with a fresh temporary directory."
     (ert-info (src :prefix "Input: ")
       (should-not (carve-test--face-includes (carve-test--face-at src at) face)))))
 
+(ert-deftest carve-test-lazy-heading-lines-stay-out-of-navigation ()
+  "A heading-shaped lazy line is text in a quote, imenu and outline (U-001)."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> text\n> = H\n" "H\n") 'carve-heading-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> text\n>\n> = H\n" "H\n") 'carve-heading-face))
+  (with-temp-buffer
+    (insert "= One\ntext\n= Lazy\n\n== Two\n")
+    (carve-mode)
+    (should (equal (mapcar #'car (carve--imenu-create-index)) '("One" " Two")))
+    (goto-char (point-min))
+    (forward-line 1)
+    (should (carve--outline-search nil nil nil nil))
+    (should (= (line-number-at-pos) 5))))
+
 (ert-deftest carve-test-block-lines-after-a-break-open-blocks ()
   "An interrupter ends the paragraph, so the line after it opens its block.
 That is a blank line, a `***' break, a table row or a container closer."

@@ -1862,10 +1862,13 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; Blocks inside a quote, after its markers: a heading, a definition
     ;; marker and a container fence.  List markers and table rows take the
     ;; quote prefix in their own rules.
-    (,(rx line-start (zero-or-more (in " \t"))
-          (one-or-more ">" " " (zero-or-more (in " \t")))
-          (group (or (** 1 6 ?=) (** 1 6 ?#))) (one-or-more " ")
-          (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
+    ((lambda (limit)
+       (carve--fontify-block-opener
+        ,(rx line-start (zero-or-more (in " \t"))
+             (one-or-more ">" " " (zero-or-more (in " \t")))
+             (group (or (** 1 6 ?=) (** 1 6 ?#))) (one-or-more " ")
+             (group (not (in " \t\n")) (zero-or-more not-newline)) line-end)
+        limit))
      (1 'carve-markup-face)
      (2 'carve-heading-face))
     ;; A `:' line is a description only below a term; a lazy or a lone one
@@ -2879,14 +2882,20 @@ re-propertized on demand, so END needs no widening."
 
 ;;;; Imenu
 
+(defun carve--lazy-heading-p (pos)
+  "Non-nil when the heading-shaped line at POS continues the text above it."
+  (save-excursion (goto-char pos) (carve--paragraph-state)))
+
 (defun carve--imenu-create-index ()
   "Build an imenu index of Carve headings."
   (let ((index '()))
     (save-excursion
       (goto-char (point-min))
       (while (re-search-forward carve--heading-re nil t)
-        ;; Skip a heading inside a code or comment block.
-        (unless (carve--verbatim-region-at (match-beginning 0))
+        ;; Skip a heading inside a code or comment block, and a heading-shaped
+        ;; lazy line of the text above it (U-001).
+        (unless (or (carve--verbatim-region-at (match-beginning 0))
+                    (save-match-data (carve--lazy-heading-p (match-beginning 0))))
           (let* ((level (length (match-string 1)))
                  (text (string-trim (match-string-no-properties 3)))
                  (label (concat (make-string (1- level) ?\s) text)))
@@ -2900,13 +2909,15 @@ re-propertized on demand, so END needs no widening."
 BOUND, MOVE, BACKWARD and LOOKING-AT as `outline-search-function' takes them."
   (if looking-at
       (and (looking-at outline-regexp)
-           (save-match-data (not (carve--verbatim-region-at (point)))))
+           (save-match-data (not (or (carve--verbatim-region-at (point))
+                                     (carve--lazy-heading-p (point))))))
     (let ((start (point)) found)
       (while (and (not found)
                   (if backward
                       (re-search-backward (concat "^" outline-regexp) bound t)
                     (re-search-forward (concat "^" outline-regexp) bound t)))
-        (unless (save-match-data (carve--verbatim-region-at (match-beginning 0)))
+        (unless (save-match-data (or (carve--verbatim-region-at (match-beginning 0))
+                                     (carve--lazy-heading-p (match-beginning 0))))
           (setq found t)))
       (unless found
         (if move

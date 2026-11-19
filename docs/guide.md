@@ -293,7 +293,9 @@ container fence. Inside `> ` quotes,
 headings, list markers, definitions, tables and container fences are painted.
 `M-q` fills a paragraph, a list item, a quote (behind its markers) or a
 definition, and leaves headings, table rows, fences, container fences, comment
-lines, attribute lines and code or comment block bodies alone.
+lines, attribute lines and code or comment block bodies alone. Filling reads
+lines one at a time, so it also stops at a heading-, quote- or attribute-shaped
+line that Carve 0.2 reads as a lazy line of the paragraph above.
 
 A link label or destination stays on its line and is read up to 500
 characters; a longer one is not painted as a link.
