@@ -5,7 +5,8 @@ markup language for documents and the web whose mnemonic is "the markup looks li
 
 `carve-mode` provides syntax highlighting, a `%%` comment syntax, an imenu
 index of headings, outline support, and an optional preview command for `.crv`
-files.
+files. This branch follows Carve 0.2; see [Carve 0.2](#carve-02) for what
+changed from 0.1.
 
 ## Features
 
@@ -14,12 +15,12 @@ files.
   completion, go-to-definition, workspace-wide rename, find-references, code
   actions and formatting. See below - it is opt-in and does nothing unless
   you ask for it.
-- ATX headings (`#` through `######`) with imenu and `outline-minor-mode`
-  support.
-- The full mnemonic inline family: `/italic/`, `*bold*`, `_underline_`,
-  `~strike~`, `=highlight=`, plus the brace forms `{*...*}`, `{/.../}`,
-  `{_..._}`, `{~...~}`, `{=...=}` and the brace-only superscript `{^super^}`
-  and subscript `{,sub,}` (a bare `^` or `,` is literal text).
+- Headings with `=` through `======` or `#` through `######`, with imenu and
+  `outline-minor-mode` support.
+- The inline family: `/italic/`, `*bold*`, the brace forms `{*...*}`,
+  `{/.../}`, `{_..._}`, `{~...~}`, `{=...=}`, and the brace-only superscript
+  `{^super^}` and subscript `{,sub,}`. Underline, strike and highlight have
+  only the brace form, so a bare `_`, `~`, `=`, `^` or `,` is literal text.
 - Inline code `` `code` ``, raw inline `` `x`{=html} ``, the inline literal
   ``!`x` ``, and escaped characters `\*` (the pair is markup, and an escaped
   delimiter cannot open a run).
@@ -27,13 +28,13 @@ files.
   links `[text][ref]`, collapsed `[ref][]`, link definitions `[ref]: url`,
   images `![alt](src)`, reference images `![alt][ref]` and `![alt][]`, spans
   `[text]{.c}`, and cross-references `</#id>`.
-- Lists: `-` `*` `+` bullets, `1.` / `1)` / `a.` ordered, task items
+- Lists: `-` `*` bullets, `1.` / `1)` / `a.` ordered, task items
   `- [ ]` / `- [x]`, and definition lists (`:: term` / `:  def`).
 - Blockquotes `>` and caption / attribution lines `^ ...`.
 - Abbreviation definitions `*[TERM]: expansion`.
 - Hard breaks (a trailing backslash), the one inline mark that renders to
   nothing and so the one most worth showing.
-- Fenced code (` ``` ` and `~~~`) with an optional language, quoted
+- Fenced code (` ``` `) with an optional language, quoted
   `"header"`, and `[label]`; raw fences ` ```=FORMAT `. A fence body is
   highlighted by its language's own major mode (see Customization).
 - Comments: line comments `%%` and `%%%`-fenced block comments.
@@ -42,8 +43,7 @@ files.
   (`::: |`, `::: \` and `::: figure`).
 - Block-attribute lines `{#id .class key=val}` and inline attribute blocks.
 - Tables: `|`, header `|=`, cell alignment in braces (`|={>}`, `|{~v .x}`),
-  rowspan `^`, colspan `<`. The 0.1.13 prefixes `|=>` / `|=~` are deprecated
-  but still highlighted.
+  rowspan `^`, colspan `<`, and `+` continuation rows.
 - Footnotes: references `[^id]`, inline footnotes `^[text]`, and definitions
   `[^id]: ...`.
 - Math: inline `` $`...` ``, display `` $$`...` ``, and fenced ` ```math `.
@@ -51,9 +51,10 @@ files.
   start. Without a closing `---` the block runs to the end of the buffer.
 - Mentions `@name` and tags `#tag` (a name holds a letter, so `#123` is
   text), inline extensions `:name[content]`, and
-  CriticMarkup `{+ins+}` `{-del-}` `{~old~>new~}` `{# comment #}`.
+  CriticMarkup `{+ins+}` `{-del-}` `{# comment #}`.
 - The braced (forced) spellings `{*x*}` `{/x/}` `{_x_}` `{~x~}` `{=x=}`, each
   in the face of the mark it means, and the combined `/*bold italic*/`.
+- Thematic breaks `***` (three or more stars).
 - The typographic replacements: the dash runs `--` and `---`, the ellipsis,
   the arrows `<--` `-->` `<-->` `<==` `==>` `<=>`, the comparison operators
   `!=` `<=` `>=`, `(tm)` `+-`, and the braced en dash `{--}`. `->`, `(c)` and
@@ -100,7 +101,7 @@ binary if it is not named `carve`.
 
 ## Importing Markdown, HTML, Djot or BBCode
 
-`M-x carve-import-file` converts a file to Carve with `carve migrate` and
+`M-x carve-import-file` converts a file to Carve with `carve import --from` and
 writes the result next to it with a `.crv` extension (`notes.md` becomes
 `notes.crv`), then visits the new file.
 
@@ -208,6 +209,9 @@ actions on a `.crv` buffer:
 | **Export as HTML** | `notes.html` next to `notes.crv` |
 | **Export as PDF** | `notes.pdf` next to `notes.crv` |
 
+With the carve-lsp `next2` server for Carve 0.2, **Export as Markdown** fails
+with "writer not available yet" until carve-js registers a Markdown writer.
+
 Pick one with `M-x eglot-code-actions` (eglot) or `M-x lsp-execute-code-action`
 (lsp-mode). The Markdown and HTML actions are offered only to a client that can
 create files from a workspace edit. lsp-mode can; the eglot that ships with
@@ -234,6 +238,41 @@ in its initialization options. Set only the key you need: a configured
 `crv2pdfPath` is always used, and `browserPath` applies only when no `crv2pdf`
 is found. A failed export shows the tool's error output.
 
+## Carve 0.2
+
+This branch reads Carve 0.2. The spec's `spec/0.2/UPGRADING.md` lists every
+source change; these are the ones the highlighting shows:
+
+- `=` headings sit beside `#` headings.
+- Only a fence, a `:::` container, a `%%%` comment fence, a table row and a
+  `***` break end a paragraph. A heading, quote, attribute line, definition or
+  term directly under text is part of the text, and a `%%` comment line does
+  not end the paragraph.
+- `---`, `___` and spaced runs such as `* * *` are no thematic breaks, and a
+  `~~~` run opens no fence.
+- A bare `_x_`, `~x~` or `=x=` is text; write `{_x_}`, `{~x~}` or `{=x=}`.
+  `{~old~>new~}` is a strike of `old~>new`, not a substitution.
+- A lone `+` line, a `+` bullet and a grid table border are text. The `+`
+  table continuation row stays.
+- A GFM separator row is an ordinary table row, and a glued `|=>` or `|=~` is
+  cell text; alignment goes in braces (`|={>}`).
+- A caption sits directly below its block, with no blank line between.
+- `carve-import-file` runs `carve import --from FORMAT FILE`; 0.1's
+  `carve migrate` is gone.
+
+The preview and import commands need a Carve 0.2 `carve` CLI. Until 0.2 is
+released, build it from the carve-js `next2` branch:
+
+```sh
+git clone --branch next2 https://github.com/markup-carve/carve-js
+cd carve-js && npm ci && npm run build
+ln -s "$PWD/dist/cli.js" ~/.local/bin/carve
+```
+
+The language server for 0.2 is the carve-lsp `next2` branch. Its *Export as
+Markdown* action fails with "writer not available yet" until carve-js
+registers a Markdown writer.
+
 ## Known limitations
 
 Carve's bare-delimiter emphasis obeys context-sensitive word-boundary rules
@@ -246,14 +285,17 @@ A closer needs a non-space before it and no letter or digit after it, and a
 run may cross one line break into a line that continues the paragraph.
 The fontification is a reading aid, not a parser.
 
-Block context is read from the lines above, the way the engine reads it: a list
-marker or a `^ ` line after a paragraph line is text, and a caption is painted
-only below a table row, a fence, a quote, an image or display math line or a
-container fence, with at most one blank line between. Inside `> ` quotes,
+Block context is read from the lines above, the way the engine reads it: a
+heading, quote, list marker, attribute line, definition, term or `^ ` line
+after paragraph or item text is text, and a caption is painted only directly
+below a table row, a fence, a quote, an image or display math line or a
+container fence. Inside `> ` quotes,
 headings, list markers, definitions, tables and container fences are painted.
 `M-q` fills a paragraph, a list item, a quote (behind its markers) or a
 definition, and leaves headings, table rows, fences, container fences, comment
-lines, attribute lines and code or comment block bodies alone.
+lines, attribute lines and code or comment block bodies alone. Filling reads
+lines one at a time, so it also stops at a heading-, quote- or attribute-shaped
+line that Carve 0.2 reads as a lazy line of the paragraph above.
 
 A link label or destination stays on its line and is read up to 500
 characters; a longer one is not painted as a link.

@@ -174,11 +174,16 @@ bare nil - which is the difference between `\"two\=' and `\"two words\"\='."
 (ert-deftest carve-test-thematic-break-spellings ()
   "Every thematic-break spelling is markup, not prose.
 This one passes before the indentation fix below; it pins the column-zero
-behavior so a later rewrite of the rule cannot drop a spelling."
-  (dolist (line '("---" "***" "___"))
+behavior so a later rewrite of the rule cannot drop a spelling.  Carve 0.2
+breaks are star runs only: `---' and `___' are text (U-044)."
+  (dolist (line '("***" "*****"))
     (should (carve-test--face-includes
              (carve-test--face-at (concat "a\n\n" line "\n\nb\n") line)
-             'carve-markup-face))))
+             'carve-markup-face)))
+  (dolist (line '("---" "___"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (concat "a\n\n" line "\n\nb\n") line)
+                 'carve-markup-face))))
 
 (ert-deftest carve-test-thematic-break-indented ()
   "A break inside a container is still a break."
@@ -187,11 +192,11 @@ behavior so a later rewrite of the rule cannot drop a spelling."
            'carve-markup-face)))
 
 (ert-deftest carve-test-spaced-thematic-break ()
-  "`- - -' and `* * *' with single spaces are breaks, not bullets (carve#4814)."
+  "`- - -' and `* * *' with single spaces are nested lists in 0.2 (U-045)."
   (dolist (line '("- - -" "* * *" "- - - -"))
     (should (equal (carve-test--text-with-face (concat "a\n\n" line "\n\nb\n")
                                                'carve-markup-face)
-                   line)))
+                   "")))
   ;; A wider gap is a nested list, and `_ _ _' is text.
   (should (carve-test--face-includes
            (carve-test--face-at "*  *  *\n" "*") 'carve-list-marker-face))
@@ -252,10 +257,14 @@ behavior so a later rewrite of the rule cannot drop a spelling."
            'carve-italic-face)))
 
 (ert-deftest carve-test-highlight ()
-  "An `=highlight=' span is fontified with the highlight face."
+  "A `{=highlight=}' span is fontified with the highlight face.
+The bare `=marked=' is text in 0.2 (U-067)."
   (should (carve-test--face-includes
-           (carve-test--face-at "see =marked= here\n" "=marked=")
-           'carve-highlight-face)))
+           (carve-test--face-at "see {=marked=} here\n" "marked")
+           'carve-highlight-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "see =marked= here\n" "=marked=")
+               'carve-highlight-face)))
 
 (ert-deftest carve-test-inline-code ()
   "An inline code span is fontified with the code face."
@@ -398,12 +407,13 @@ marker - and a tab does not separate (markup-carve/carve#525)."
                  ".{#x} attributed" "iv.{.c} item" "IV){.c} item"
                  "  > -{.c} item" "> | a | b |{.c}  "
                  "> {.c}\n> x" "> > {.c}  " "- {.c}\n  x"
-                 "- item\n  {.c}" "  {.c}"))
+                 "  {.c}"))
     (should (carve-test--face-includes
              (carve-test--face-at (concat src "\n")
                                   (if (string-match-p "{#x}" src) "{#x}" "{.c}"))
              'carve-attribute-face)))
-  (dolist (src '("+{.c} item" ": {.c} def" "| a | b | {.c}"))
+  ;; An attribute line under item text is lazy text in 0.2 (U-003).
+  (dolist (src '("+{.c} item" ": {.c} def" "| a | b | {.c}" "- item\n  {.c}"))
     (should-not (carve-test--face-includes
                  (carve-test--face-at (concat src "\n") "{.c}")
                  'carve-attribute-face))))
@@ -426,9 +436,9 @@ marker - and a tab does not separate (markup-carve/carve#525)."
   (should (equal (carve-test--text-with-face
                   "|={>} Price |={~v .x} B |\n|{?^} 3 | 4 |\n" 'carve-table-face)
                  "|={>}|={~v .x}||{?^}||"))
-  ;; The deprecated 0.1.13 prefix is still read.
+  ;; The glued 0.1 prefix is cell text in 0.2 (U-056).
   (should (equal (carve-test--text-with-face "|=> Price |<^ x |\n" 'carve-table-face)
-                 "|=>|<^|")))
+                 "|=||")))
 
 (ert-deftest carve-test-footnote-ref ()
   "A `[^id]' footnote reference is fontified."
@@ -788,7 +798,8 @@ the closing braces as a selector."
 
 (ert-deftest carve-test-unterminated-fence-paints-its-body ()
   "A column-zero unterminated fence paints its body, not just its opener line."
-  (dolist (fence '("```" "~~~"))
+  ;; A tilde run is no fence in 0.2 (U-116).
+  (dolist (fence '("```" "````"))
     (let ((src (concat fence "\na *b* c\n\nd *e* f\n")))
       ;; BOTH runs, and the second is the one that matters: the body crosses a
       ;; BLANK LINE, which is where every paragraph-bounded rule in this mode
@@ -922,7 +933,8 @@ engine's:
                   ("%%%\nhidden one\nhidden two\n%%%\n" . 6)
                   ("text\n%% note\nmore\n" . 1)
                   ("::: note\nbody\n:::\n" . 2)
-                  ("text\n---\nmore\n" . 1)))
+                  ;; `---' is text in 0.2 (U-044); `***' is the break.
+                  ("text\n***\nmore\n" . 1)))
     (should (equal (carve-test--fill (car case) (cdr case)) (car case)))))
 
 (ert-deftest carve-test-fill-joins-prose ()
@@ -974,8 +986,9 @@ engine's:
                (carve-test--face-at "para\n\n^ literal\n" "^") 'carve-markup-face))
   (should (carve-test--face-includes
            (carve-test--face-at "| t |\n^ cap\n" "^") 'carve-markup-face))
-  (should (carve-test--face-includes
-           (carve-test--face-at "| t |\n\n^ cap\n" "^") 'carve-markup-face)))
+  ;; After a blank line it is prose in 0.2 (U-063).
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "| t |\n\n^ cap\n" "^") 'carve-markup-face)))
 
 (ert-deftest carve-test-blocks-inside-quotes ()
   (should (carve-test--face-includes
@@ -1162,13 +1175,13 @@ what this test always said it was."
     (font-lock-ensure)
     (should (eq (get-text-property 4 'face) 'carve-strike-face))))
 
-(ert-deftest carve-test-tilde-brace-with-arrow-is-a-substitution ()
-  "{~old~>new~} keeps the critic face."
+(ert-deftest carve-test-tilde-brace-with-arrow-is-a-strike ()
+  "{~old~>new~} is a strike of `old~>new' in 0.2 (U-069)."
   (with-temp-buffer
     (insert "a {~old~>new~} b")
     (carve-mode)
     (font-lock-ensure)
-    (should (eq (get-text-property 5 'face) 'carve-critic-face))))
+    (should (eq (get-text-property 5 'face) 'carve-strike-face))))
 
 ;;; Composite figures (PART 9 §4c, markup-carve/carve#1215).
 ;;
@@ -1280,16 +1293,14 @@ rediscovered."
            'carve-admonition-face)))
 
 (ert-deftest carve-test-continuation-marker ()
-  "A lone `+\' is the continuation marker, and it is painted.
-It transfers the next flush-left block to the container whose marker column it
-sits at, and opens no item of its own - so an unpainted one reads as prose."
-  (should (carve-test--face-includes
-           (carve-test--face-at "- item\n+\nblock\n" "+")
-           'carve-markup-face))
-  ;; in a block quote, which takes the same marker
-  (should (carve-test--face-includes
-           (carve-test--face-at "> quoted\n+\n> attached\n" "+")
-           'carve-markup-face)))
+  "A lone `+\' is text in 0.2 (U-014 to U-017), so it is not painted."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "- item\n+\nblock\n" "+")
+               'carve-markup-face))
+  ;; in a block quote, which took the same marker in 0.1
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> quoted\n+\n> attached\n" "+")
+               'carve-markup-face)))
 
 (defun carve-test--marker-at-line-p (text line)
   "Non-nil when the `+\' on LINE of TEXT has the continuation marker face."
@@ -1304,9 +1315,8 @@ sits at, and opens no item of its own - so an unpainted one reads as prose."
                                'carve-markup-face)))
 
 (ert-deftest carve-test-continuation-marker-attaches ()
-  "A lone `+\' is a marker only where it attaches the next block.
-Each row was read against carve-js main: the `+\' at an open container's
-marker column with a block at that column next, or right after a block opener."
+  "Every shape where 0.1 attached the next block with `+\' is text in 0.2.
+These rows were the 0.1 attach cases; U-014 to U-017 make the marker text."
   (pcase-dolist (`(,text ,line)
                  '(("- a\n+\nb\n" 2) ("- a\n  - b\n  +\n  c\n" 3)
                    ("- a\n  - b\n+\npara\n" 3) ("  - a\n  +\n  b\n" 2)
@@ -1321,13 +1331,13 @@ marker column with a block at that column next, or right after a block opener."
                    ("1. +\nflush\n" 1) ("- [ ] +\nflush\n" 1) ("- > +\nflush\n" 1)
                    ("- - +\nflush\n" 1) (":: t\n: +\nflush\n" 2)
                    ("[^a]: +\nflush\n\nx[^a]\n" 1)))
-    (should (carve-test--marker-at-line-p text line))))
+    (should-not (carve-test--marker-at-line-p text line))))
 
 (ert-deftest carve-test-continuation-marker-long-item ()
-  "An item longer than the first look-back window still owns its `+\'."
+  "A `+\' after a long item is text in 0.2 too (U-014)."
   (let ((text (concat "- a\n" (apply #'concat (make-list 450 "  more\n"))
                       "+\nnext\n")))
-    (should (carve-test--marker-at-line-p text 452))))
+    (should-not (carve-test--marker-at-line-p text 452))))
 
 (ert-deftest carve-test-continuation-marker-refused ()
   "A lone `+\' that attaches nothing is text, like any other character."
@@ -1361,10 +1371,9 @@ In `> >+\=' only the first `>\=' is a quote prefix (markup-carve/carve#3421)."
                (carve-test--face-at "> >+\nq\n" ">+") 'carve-blockquote-face)))
 
 (ert-deftest carve-test-list-hosted-quote-continuation ()
-  "A quote opened on a list item line takes its first-block plus.
-The follower starts a non-list block at column 0, at the line's indent or at
-the owning quote's column, and the markers are one space apart
-\(markup-carve/carve#3421, corpus 649 to 656, read against carve-js 0.1.13)."
+  "A first-block `+\' in a quote opened on a list item line is text in 0.2.
+The first group held the 0.1 attach cases (markup-carve/carve#3421); U-017
+makes every one of them text, like the refused group after it."
   (pcase-dolist (`(,text ,line)
                  '(("- > +\npara\n" 1) ("- > +\n> q\n" 1) ("- > +\n  > q\n" 1)
                    ("- a\n  - > +\n  b\n" 2) ("- a\n  - > +\n# h\n" 2)
@@ -1372,7 +1381,7 @@ the owning quote's column, and the markers are one space apart
                    ("- > > +\n    b\n" 1) ("- > > +\n> q\n" 1)
                    ("> - > +\n# h\n" 1) ("> - > +\n>   # h\n" 1)
                    ("1. > +\n   b\n" 1) ("- [x] > +\n# h\n" 1)))
-    (should (carve-test--marker-at-line-p text line)))
+    (should-not (carve-test--marker-at-line-p text line)))
   (pcase-dolist (`(,text ,line)
                  '(("- > +\n b\n" 1) ("- a\n  - > +\n b\n" 2) ("- - > +\n  b\n" 1)
                    ("- > > +\n  > q\n" 1) ("- > > +\n  - s\n" 1) ("> - > +\n- s\n" 1)
@@ -1435,10 +1444,12 @@ separated, and a list marker after a paragraph line is text with its quote."
   "A `:\' line is a description only below a term; otherwise it is text.
 A lazy colon line in a quote stays paragraph text (markup-carve/carve#3493)."
   (dolist (text '(":: t\n: d\n" ":: t\n\n: d\n" ":: t\nlazy\n: d\n"
-                  "> :: t\n> : d\n" "- :: t\n  : d\n" "- a\n  :: t\n  : d\n"))
+                  "> :: t\n> : d\n" "- :: t\n  : d\n"))
     (should (carve-test--face-includes
              (carve-test--face-at text ": d") 'carve-markup-face)))
-  (dolist (text '(": d\n" ": a\n: d\n" "::  \n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
+  ;; A term under item or paragraph text is text in 0.2 (U-004, U-009).
+  (dolist (text '("- a\n  :: t\n  : d\n" "para\n:: t\n: d\n"
+                  ": d\n" ": a\n: d\n" "::  \n: d\n" "para\n: d\n" "- a\n: d\n" ":: t\n\nfoo\n: d\n"
                   "> a\n: d\n" "> q\n> : d\n" "> :: t\n: d\n" "> - :: t\n> : d\n"))
     (should-not (carve-test--face-includes
                  (carve-test--face-at text ": d") 'carve-markup-face)))
@@ -1511,11 +1522,12 @@ opener came back scoped as a cell delimiter."
 This is why it is a group of the fence matcher rather than a rule of its own:
 a rule matching the same shape would paint the `=html' on this line, which is
 payload rather than an opener."
+  ;; A wider backtick fence holds it; `~~~' is no fence in 0.2 (U-116).
   (should (carve-test--face-includes
-           (carve-test--face-at "~~~\n```=html\n~~~\n" "=html")
+           (carve-test--face-at "````\n```=html\n````\n" "=html")
            'carve-code-face))
   (should-not (carve-test--face-includes
-               (carve-test--face-at "~~~\n```=html\n~~~\n" "=html")
+               (carve-test--face-at "````\n```=html\n````\n" "=html")
                'carve-attribute-face)))
 
 (ert-deftest carve-test-indented-fence-is-a-fence ()
@@ -1638,7 +1650,8 @@ matched, so a forced bold read the same as a forced strikethrough."
 
 (ert-deftest carve-test-editorial-markup-still-highlights ()
   "Requiring content did not cost the four editorial spellings their face."
-  (dolist (span '("{+ins+}" "{-del-}" "{~old~>new~}" "{# note #}"))
+  ;; `{~old~>new~}' is a strike in 0.2 (U-069), see below.
+  (dolist (span '("{+ins+}" "{-del-}" "{# note #}"))
     (should (carve-test--face-includes
              (carve-test--face-at (concat "a " span " b\n") span)
              'carve-critic-face))))
@@ -1709,9 +1722,12 @@ regression test on the ORDER as much as on the rule."
            (carve-test--face-at "a <https://e.com/a--b> z\n" "--") 'carve-url-face))
   (should (carve-test--face-includes
            (carve-test--face-at "%% a -- b\n" "--") 'font-lock-comment-face))
-  ;; ... and a thematic break is a break, not an em dash.
+  ;; ... and a thematic break is a break, not a dash run.  `---' alone on a
+  ;; line is an em dash in 0.2 (U-044), so the break is `***'.
   (should (carve-test--face-includes
-           (carve-test--face-at "a\n\n---\n\nb\n" "---") 'carve-markup-face)))
+           (carve-test--face-at "a\n\n***\n\nb\n" "***") 'carve-markup-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "a\n\n---\n\nb\n" "---") 'carve-typographic-face)))
 
 (ert-deftest carve-test-verbatim-payloads-are-inert ()
   "No inline rule reaches inside a payload that is not Carve.
@@ -1964,7 +1980,7 @@ A fence holding a fence is what every document describing Carve in Carve is
 made of, and an indented delimiter-shaped line ended the block early - so
 everything after the sample went live."
   (should (carve-test--face-includes
-           (carve-test--face-at "~~~\n  ~~~\n*b*\n~~~\n" "*b*") 'carve-code-face))
+           (carve-test--face-at "````\n  ````\n*b*\n````\n" "*b*") 'carve-code-face))
   (should (carve-test--face-includes
            (carve-test--face-at "```\n  ```\n*b*\n```\n" "*b*") 'carve-code-face))
   ;; ... and a fence that opens at a container's content column still closes
@@ -1976,14 +1992,16 @@ everything after the sample went live."
            (carve-test--face-at "- item\n\n  ```\n  *b*\n  ```\n\n*c*\n" "*c*")
            'carve-bold-face))
   ;; The column is a COLUMN, not a spelling of whitespace: an opener indented
-  ;; with eight spaces still meets a closer indented with one tab.  A TILDE
-  ;; fence, because a backtick one is also claimed by the code-span matcher
-  ;; and would answer this question without the fence rule taking part.
-  (let ((src "        ~~~\n*b*\n\t~~~\n\n*c*\n"))
+  ;; with eight spaces still meets a closer indented with one tab.  0.2 has
+  ;; no tilde fence (U-116), so the backtick one answers it.
+  (let ((src "        ```\n*b*\n\t```\n\n*c*\n"))
     (should (carve-test--face-includes
              (carve-test--face-at src "*b*") 'carve-code-face))
     (should (carve-test--face-includes
-             (carve-test--face-at src "*c*") 'carve-bold-face))))
+             (carve-test--face-at src "*c*") 'carve-bold-face)))
+  ;; The tilde spelling is text, so its `*b*' is bold.
+  (should (carve-test--face-includes
+           (carve-test--face-at "        ~~~\n*b*\n\t~~~\n" "*b*") 'carve-bold-face)))
 
 (defun carve-test--face-after-partial-fontify (text from search)
   "Fontify TEXT from FROM's line to its end only, then return SEARCH's face.
@@ -2025,10 +2043,9 @@ and a chunk starting inside a run has no opener to find."
            'carve-bold-face)))
 
 (defconst carve-test--destination-runs
-  '(("/" . carve-italic-face) ("*" . carve-bold-face)
-    ("_" . carve-underline-face) ("~" . carve-strike-face)
-    ("=" . carve-highlight-face))
-  "Each bare delimiter and the face of its run.")
+  '(("/" . carve-italic-face) ("*" . carve-bold-face))
+  "Each bare delimiter and the face of its run.
+Bare `_', `~' and `=' runs are text in 0.2 (U-065 to U-067).")
 
 (defun carve-test--destinations (d)
   "Link destinations and autolinks holding the delimiter D."
@@ -2076,10 +2093,14 @@ PART 9 S9 E2a: `/see [x](http://a.b/c/) now/' is one italic run."
                    'carve-italic-face)))))
 
 (ert-deftest carve-test-an-email-autolink-is-opaque ()
-  "An underscore inside an email autolink closes nothing."
+  "An underscore inside an email autolink closes nothing.
+The bare `_' run is text in 0.2 (U-065), so the braced span carries it."
   (should (carve-test--face-includes
-           (carve-test--face-at "_see <a_b@c_d.de> now_\n" " now")
-           'carve-underline-face)))
+           (carve-test--face-at "{_see <a_b@c_d.de> now_}\n" " now")
+           'carve-underline-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "_see <a_b@c_d.de> now_\n" " now")
+               'carve-underline-face)))
 
 (ert-deftest carve-test-a-malformed-email-autolink-is-not-opaque ()
   "`<x@a.b/>' is not an email autolink, so its `/' closes the run."
@@ -2191,7 +2212,8 @@ BODY is called with a fresh temporary directory."
        (write-region "**bold**\n" nil src)
        (should (equal (carve-import-file src) (concat dir "doc.crv")))
        (should (equal (buffer-file-name) (concat dir "doc.crv")))
-       (should (equal (buffer-string) "migrate --from markdown\n*bold*\n"))))))
+       ;; 0.2 renamed `migrate --from' to `import --from' (C2-T-007, C2-T-033).
+       (should (equal (buffer-string) "import --from markdown\n*bold*\n"))))))
 
 (ert-deftest carve-test-import-declined-overwrite-keeps-the-target ()
   (carve-test--with-stub-cli
@@ -2210,7 +2232,7 @@ BODY is called with a fresh temporary directory."
 
 (ert-deftest carve-test-import-reports-cli-errors ()
   (carve-test--with-stub-cli
-   "echo 'carve migrate: cannot read' >&2; exit 2"
+   "echo 'carve import: cannot read' >&2; exit 2"
    (lambda (dir)
      (let ((src (expand-file-name "doc.html" dir)))
        (write-region "<p>x</p>\n" nil src)
@@ -2300,3 +2322,101 @@ BODY is called with a fresh temporary directory."
 (provide 'carve-mode-tests)
 
 ;;; carve-mode-tests.el ends here
+
+;;;; Carve 0.2
+
+(ert-deftest carve-test-equals-headings ()
+  "`=' marks a heading beside `#' (C2-B-151, C2-B-152)."
+  (dolist (src '("= Title\n" "== Section\n" "====== Six\n"))
+    (should (carve-test--face-includes
+             (carve-test--face-at src "=") 'carve-markup-face))
+    (should (carve-test--face-includes
+             (carve-test--face-at src " ") nil)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "== Section\n" "Section") 'carve-heading-face))
+  ;; Seven markers, a bare run and a tab separator are text.
+  (dolist (src '("======= x\n" "=\n" "=\tx\n"))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at src "=") 'carve-markup-face))))
+
+(ert-deftest carve-test-equals-headings-in-imenu-and-outline ()
+  "Imenu and outline take `=' headings with their level."
+  (with-temp-buffer
+    (insert "= One\n\ntext\n\n== Two\n\n# Three\n")
+    (carve-mode)
+    (should (equal (mapcar #'car (carve--imenu-create-index))
+                   '("One" " Two" "Three")))
+    (goto-char (point-min))
+    (forward-line 4)
+    (should (looking-at outline-regexp))
+    (should (= (funcall outline-level) 2))))
+
+(ert-deftest carve-test-block-lines-under-text-are-text ()
+  "Directly under paragraph or item text these lines are lazy text (U-001 to U-010)."
+  (pcase-dolist (`(,src ,at ,face)
+                 '(("text\n# H\n" "# H" carve-heading-face)
+                   ("text\n= H\n" "H\n" carve-heading-face)
+                   ("text\n> q\n" ">" carve-blockquote-face)
+                   ("text\n{.x}\n" "{.x}" carve-attribute-face)
+                   ("text\n[x]: /u\n" "[x]:" carve-footnote-face)
+                   ;; `[^n]' itself is now an inline reference; the colon is text.
+                   ("text\n[^n]: x\n" ": x" carve-footnote-face)
+                   ("text\n*[A]: b\n" "*[A]:" carve-markup-face)
+                   ("text\n:: t\n" "::" carve-markup-face)
+                   ("- item\n# H\n" "H\n" carve-heading-face)
+                   ;; A comment-only line does not end the paragraph.
+                   ("text\n%% c\n# H\n" "H\n" carve-heading-face)))
+    (ert-info (src :prefix "Input: ")
+      (should-not (carve-test--face-includes (carve-test--face-at src at) face)))))
+
+(ert-deftest carve-test-lazy-heading-lines-stay-out-of-navigation ()
+  "A heading-shaped lazy line is text in a quote, imenu and outline (U-001)."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "> text\n> = H\n" "H\n") 'carve-heading-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "> text\n>\n> = H\n" "H\n") 'carve-heading-face))
+  (with-temp-buffer
+    (insert "= One\ntext\n= Lazy\n\n== Two\n")
+    (carve-mode)
+    (should (equal (mapcar #'car (carve--imenu-create-index)) '("One" " Two")))
+    (goto-char (point-min))
+    (forward-line 1)
+    (should (carve--outline-search nil nil nil nil))
+    (should (= (line-number-at-pos) 5))))
+
+(ert-deftest carve-test-block-lines-after-a-break-open-blocks ()
+  "An interrupter ends the paragraph, so the line after it opens its block.
+That is a blank line, a `***' break, a table row or a container closer."
+  (pcase-dolist (`(,src ,at ,face)
+                 '(("text\n\n# H\n" "H\n" carve-heading-face)
+                   ("text\n***\n# H\n" "H\n" carve-heading-face)
+                   ("| a |\n# H\n" "H\n" carve-heading-face)
+                   ("::: note\nx\n:::\n# H\n" "H\n" carve-heading-face)
+                   ("text\n\n> q\n" ">" carve-blockquote-face)
+                   ("- a\n\n> q\n" ">" carve-blockquote-face)
+                   ("text\n\n{.x}\n# H\n" "{.x}" carve-attribute-face)))
+    (ert-info (src :prefix "Input: ")
+      (should (carve-test--face-includes (carve-test--face-at src at) face)))))
+
+(ert-deftest carve-test-tilde-run-opens-no-fence ()
+  "A `~~~' run is text in 0.2 (U-116), so the lines after it are Carve."
+  (should (carve-test--face-includes
+           (carve-test--face-at "~~~\n*b*\n~~~\n" "*b*") 'carve-bold-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "~~~\n*b*\n~~~\n" "*b*") 'carve-code-face)))
+
+(ert-deftest carve-test-bare-underline-strike-highlight-are-text ()
+  "Bare `_x_', `~x~' and `=x=' are text (U-065 to U-067); braced forms mark."
+  (pcase-dolist (`(,bare ,braced ,face)
+                 '(("a _u_ b\n" "a {_u_} b\n" carve-underline-face)
+                   ("a ~s~ b\n" "a {~s~} b\n" carve-strike-face)
+                   ("a =h= b\n" "a {=h=} b\n" carve-highlight-face)))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at bare (substring bare 3 4)) face))
+    (should (carve-test--face-includes
+             (carve-test--face-at braced (substring braced 4 5)) face))))
+
+(ert-deftest carve-test-plus-bullet-is-text ()
+  "A `+' bullet is text in 0.2 (`djot-plus-bullet' rewrites it to `-')."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "+ item\n" "+") 'carve-list-marker-face)))
