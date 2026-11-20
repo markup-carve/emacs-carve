@@ -83,7 +83,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      CARVE_JS_REV: edd6e00a76729cb086dcb15c38818e1cc34159fb
+      CARVE_JS_REV: d4d723d3d697b74cf7972b97a94a059845f58e7b
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
