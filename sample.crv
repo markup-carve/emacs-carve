@@ -3,23 +3,22 @@ title: Carve Sample
 author: markup-carve
 tags: [carve, demo]
 ---
-
 %% This file demonstrates the Carve constructs that carve-mode highlights.
 
-# Carve Sample
+= Carve Sample
 
-A tour of /italic/, *bold*, /*bold italic*/, _underline_, ~strike~,
-=highlight=, {^super^}, and {,sub,} text. Brace forms also work intraword:
+A tour of /italic/, *bold*, */bold italic/*, {_underline_}, {~strike~},
+{=highlight=}, {^super^}, and {,sub,} text. Brace forms also work intraword:
 H{,2,}O and mc{^2^} and foo{*bar*}baz.
 
-## Inline
+== Inline
 
 Run `npm install` first, or pass a raw `<br>`{=html} when you must.
 Inline math $`E = mc^2` and display math on its own line:
 
 $$`\int_0^1 x\,dx`
 
-## Links and references
+== Links and references
 
 Read [Djot](https://djot.net "The spec") for details, and the
 [introduction][intro] too. A collapsed reference: [Other Page][].
@@ -30,30 +29,34 @@ Cross-reference: see </#Inline>. An image with a caption:
 ^ Figure 1: First moon landing
 
 [intro]: https://example.com/intro "Introduction"
+
 [Other Page]: /other-page
 
-## Lists
+== Lists
 
 - apples
 - oranges
   - clementines
+
+
+
 - [ ] a pending task
 - [x] a finished task
 
 1. first
-. bare-dot item, continuing the same list
-2. second
-3. third
+2. bare-dot item, continuing the same list
+3. second
+4. third
 
 :: term
-:  a definition for the term
+: a definition for the term
 
-## Blockquote
+== Blockquote
 
 > Stay hungry, stay foolish.
 ^ Steve Jobs
 
-## Code
+== Code
 
 ```python "demo.py" [Build]
 print("hello, carve")
@@ -63,33 +66,33 @@ print("hello, carve")
 <div>passed through for HTML output</div>
 ```
 
-## Admonitions and divs
+== Admonitions and divs
 
 ::: note "Heads up"
 This is an admonition with a title.
 :::
 
-{#sidebar .featured}
-:::
+{#sidebar}
+::: featured
 A generic div carrying attributes from the line above.
 :::
 
-## Tables
+== Tables
 
 |= Fruit |={>} Price |
-| Apple  | $1      |
-| Pear   | $2      |
+| Apple | $1 |
+| Pear | $2 |
 ^ Fruit prices
 
-## Footnotes
+== Footnotes
 
 Carve has footnotes.[^fn] You can also write inline ones ^[like this].
 
 [^fn]: Defined anywhere; resolved by label.
 
-## Editorial and social
+== Editorial and social
 
-A revision: {+inserted+} {-deleted-} {~old~>new~} {# a comment #}.
+A revision: {+inserted+} {-deleted-} {-old-}{+new+} {# a comment #}.
 Mentions and tags: hey @alice, see #release-1.0.
 
 %%%
