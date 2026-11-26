@@ -1,6 +1,6 @@
 # carve-mode
 
-An Emacs major mode for Carve `.crv` files. Package version 0.1.11 requires Emacs 27.1 or later. The `next2` branch follows Carve 0.2 ([what changed](docs/guide.md#carve-02)). See the [Carve documentation](https://markup-carve.github.io/carve/) for the markup language.
+An Emacs major mode for Carve `.crv` files. Package version 0.1.11 requires Emacs 27.1 or later. The `main` branch follows Carve 0.2; Carve 0.1 stays on the `0.1` branch ([what changed](docs/guide.md#carve-02)). See the [Carve documentation](https://markup-carve.github.io/carve/) for the markup language.
 
 ## Features
 

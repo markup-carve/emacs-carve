@@ -6,9 +6,9 @@
 # copy that nothing compares is a copy only until someone edits one side, and a
 # stale battery here would pass while the language moved.
 #
-# carve-grammars' `next2` (Carve 0.2) dropped its copy in #903, so this branch
+# carve-grammars' Carve 0.2 line (`main`) dropped its copy in #903, so this branch
 # compares against the last commit that shipped it. Every shape in it renders
-# the same in the carve-js `next2` engine.
+# the same in the carve-js `main` engine.
 set -euo pipefail
 
 battery_rev=85c3af1adf1abdace24cf9dd059636de05ff16be
