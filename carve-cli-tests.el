@@ -4,7 +4,7 @@
 
 ;; The preview and import commands shell out to the `carve' CLI.  These tests
 ;; run them against a real one and skip when none is on `exec-path', unless
-;; CARVE_REQUIRE_CLI is set: CI builds carve-js `next2' at a pinned commit and
+;; CARVE_REQUIRE_CLI is set: CI builds carve-js `main' at a pinned commit and
 ;; sets it, so a missing CLI there fails instead of passing silently.
 
 ;;; Code:
