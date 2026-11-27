@@ -8,18 +8,23 @@ Releases before 0.1.5 are described on the
 
 ## [Unreleased]
 
-Highlighting, preview and import follow Carve 0.2 on the `next2` branch.
+## [0.2.0] - 2026-11-27
+
+Highlighting, preview and import follow Carve 0.2.
 
 ### Breaking
 
-- `carve-import-file` runs `carve import --from FORMAT FILE`, the Carve 0.2 command; the 0.1 `carve migrate` is gone, so import needs a 0.2 CLI.
-- Bare `_x_`, `~x~` and `=x=`, the `{~old~>new~}` substitution, the lone `+` continuation line, `+` bullets, `---` and `___` breaks, spaced breaks, `~~~` fences and the glued `|=>` alignment are no longer highlighted: Carve 0.2 reads them as text.
+- `carve-import-file` runs `carve import --from FORMAT FILE`, the Carve 0.2 command; the 0.1 `carve migrate` is gone, so import needs a 0.2 CLI (#81).
+- Bare `_x_`, `~x~` and `=x=`, the `{~old~>new~}` substitution, the lone `+` continuation line, `+` bullets, `---` and `___` breaks, spaced breaks, `~~~` fences and the glued `|=>` alignment are no longer highlighted: Carve 0.2 reads them as text (#81).
 
 ### Improvements
 
-- `=` headings are highlighted and indexed in imenu and outline, beside `#` headings.
-- A heading, quote, attribute line, definition or term directly under paragraph or item text is shown as text, and a `%%` comment line no longer ends a paragraph, as Carve 0.2 reads them.
-- A caption is highlighted only directly below its block.
+- `=` headings are highlighted and indexed in imenu and outline, beside `#` headings (#81).
+- A heading, quote, attribute line, definition or term directly under paragraph or item text is shown as text, and a `%%` comment line no longer ends a paragraph, as Carve 0.2 reads them (#81).
+- A caption is highlighted only directly below its block (#81).
+- A `{$name}: value` snippet definition and a `{{ $name }}` snippet use are highlighted, with the new `carve-snippet-face` for the name (#90).
+
+**Full Changelog**: https://github.com/markup-carve/emacs-carve/compare/0.1.11...0.2.0
 
 ## [0.1.11] - 2026-11-12
 

@@ -262,16 +262,14 @@ source change; these are the ones the highlighting shows:
 - `carve-import-file` runs `carve import --from FORMAT FILE`; 0.1's
   `carve migrate` is gone.
 
-The preview and import commands need a Carve 0.2 `carve` CLI. Until 0.2 is
-released, build it from the carve-js `main` branch:
+The preview and import commands need a Carve 0.2 `carve` CLI:
 
 ```sh
-git clone https://github.com/markup-carve/carve-js
-cd carve-js && npm ci && npm run build
-ln -s "$PWD/dist/cli.js" ~/.local/bin/carve
+npm i -g @markup-carve/carve@^0.2
 ```
 
-The language server for 0.2 is the carve-lsp `main` branch. Its *Export as
+The language server for 0.2 is carve-lsp 0.2
+(`npm i -g @markup-carve/carve-lsp@^0.2`). Its *Export as
 Markdown* action fails with "writer not available yet" until carve-js
 registers a Markdown writer.
 
