@@ -383,7 +383,8 @@ Column 0 only, and a marker holding an id defines nothing.")
   (rx (or (seq (or (** 1 6 ?=) (** 1 6 ?#)) (one-or-more " ") (not (in " \t\n")))
           (regexp carve--snippet-definition-re)
           (seq (zero-or-more (in " \t"))
-               (or (seq ">" (or " " line-end))
+               (or (seq (regexp carve--snippet-use-re) (zero-or-more (in " \t")) line-end)
+                   (seq ">" (or " " line-end))
                    (>= 3 ?`)
                    (>= 3 ?:)
                    (seq "::" (one-or-more " ") (not (in " \t\n")))
@@ -2226,7 +2227,8 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; A snippet use `{{ $name }}' (C2-I-128, C2-B-237).  After the include
     ;; keyword, which skips this shape, so a use spelled inside a quoted path
     ;; keeps the path's face.
-    (,carve--snippet-use-re
+    (,(rx (or line-start (not (in "\\"))) (zero-or-more "\\\\")
+          (regexp carve--snippet-use-re))
      (1 'carve-markup-face)
      (2 'carve-snippet-face)
      (3 'carve-markup-face))

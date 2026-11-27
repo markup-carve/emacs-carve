@@ -2476,3 +2476,18 @@ That is a blank line, a `***' break, a table row or a container closer."
   (let ((face (carve-test--face-at "See {{ \"a {{ $ver }}.crv\" }} here\n" "$ver")))
     (should (carve-test--face-includes face 'carve-include-face))
     (should-not (carve-test--face-includes face 'carve-snippet-face))))
+
+(ert-deftest carve-test-snippet-use-escaped ()
+  "`\\{{ $v }}' escapes the brace and makes no use (C2-I-128)."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "A \\{{ $v }} b\n" "$v")
+               'carve-snippet-face)))
+
+(ert-deftest carve-test-snippet-block-use-ends-the-block ()
+  "A use alone on its line is a one-line block, so a heading below it opens."
+  (should (carve-test--face-includes
+           (carve-test--face-at "{{ $v }}\n= Heading\n" "Heading")
+           'carve-heading-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "text\n{{ $v }}\n= Heading\n" "Heading")
+               'carve-heading-face)))
