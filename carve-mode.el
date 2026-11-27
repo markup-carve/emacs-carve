@@ -258,6 +258,11 @@ something a per-line rule can know, so it keeps `carve-admonition-face'."
   "Face for a reserved include directive, `{{ path }}'."
   :group 'carve)
 
+(defface carve-snippet-face
+  '((t :inherit font-lock-variable-name-face))
+  "Face for a snippet name in a definition `{$name}:' or a use `{{ $name }}'."
+  :group 'carve)
+
 (defface carve-tag-face
   '((t :inherit font-lock-builtin-face))
   "Face for `#tags'."
@@ -345,8 +350,32 @@ the region that matcher paints, and two spellings of one rule drift.")
       (not (in " \t\n")))
   "A line opening with a list marker and content.")
 
+(defconst carve--snippet-parts-rx
+  '(zero-or-more (or (not (in "{}#\"'\n"))
+                     (seq ?\" (zero-or-more (or (seq ?\\ not-newline)
+                                                (not (in ?\" ?\\ ?\n))))
+                          ?\")
+                     (seq ?' (zero-or-more (or (seq ?\\ not-newline)
+                                               (not (in ?' ?\\ ?\n))))
+                          ?')))
+  "The parts of a snippet marker or a glued block: no brace, no id.")
+
+(defconst carve--snippet-definition-re
+  (rx-to-string
+   `(seq line-start
+         (group "{")
+         (group "$" (in "A-Za-z0-9_") (zero-or-more (in "A-Za-z0-9_-")))
+         (group (opt " " ,carve--snippet-parts-rx) "}"
+                (zero-or-more "{" ,carve--snippet-parts-rx "}")
+                ":")
+         " " (zero-or-more not-newline) (not (in " \t\n")))
+   t)
+  "A snippet definition `{$name}: value' (C2-B-236).
+Column 0 only, and a marker holding an id defines nothing.")
+
 (defconst carve--block-line-re
   (rx (or (seq (or (** 1 6 ?=) (** 1 6 ?#)) (one-or-more " ") (not (in " \t\n")))
+          (regexp carve--snippet-definition-re)
           (seq (zero-or-more (in " \t"))
                (or (seq ">" (or " " line-end))
                    (>= 3 ?`)
@@ -1970,6 +1999,14 @@ Without one the line is paragraph text, inside a quote or out of it."
         limit))
      (1 'carve-markup-face))
 
+    ;; Snippet definition: {$name}: value.  A lazy line of the text above
+    ;; stays text, as the other definitions do.
+    ((lambda (limit)
+       (carve--fontify-block-opener carve--snippet-definition-re limit))
+     (1 'carve-markup-face)
+     (2 'carve-snippet-face)
+     (3 'carve-markup-face))
+
     ;; Footnote definition: [^id]:
     ((lambda (limit)
        (carve--fontify-block-opener
@@ -2135,6 +2172,16 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; so a directive inside `code' keeps the code face (font-lock does not
     ;; override a face already set), and BEFORE the mention and tag keywords, so
     ;; they find the run already claimed.
+    ;; A snippet use `{{ $name }}' (C2-I-128, C2-B-237): space pads only and
+    ;; no option, so it must claim the braces before the include matcher reads
+    ;; `$name' as a path.
+    (,(rx (group "{{") (one-or-more " ")
+          (group "$" (in "A-Za-z0-9_") (zero-or-more (in "A-Za-z0-9_-")))
+          (one-or-more " ") (group "}}"))
+     (1 'carve-markup-face)
+     (2 'carve-snippet-face)
+     (3 'carve-markup-face))
+
     (carve--fontify-include
      (1 'carve-markup-face)
      (3 'carve-include-face)
