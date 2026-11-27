@@ -46,6 +46,8 @@ changed from 0.1.
   rowspan `^`, colspan `<`, and `+` continuation rows.
 - Footnotes: references `[^id]`, inline footnotes `^[text]`, and definitions
   `[^id]: ...`.
+- Snippets: definitions `{$name}: value` at column 0 and uses `{{ $name }}`,
+  with the name in `carve-snippet-face`.
 - Math: inline `` $`...` ``, display `` $$`...` ``, and fenced ` ```math `.
 - Frontmatter blocks (`---`, `--- toml`, `---json`, ...) at the document
   start. Without a closing `---` the block runs to the end of the buffer.

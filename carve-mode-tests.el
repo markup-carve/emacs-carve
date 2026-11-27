@@ -2420,3 +2420,74 @@ That is a blank line, a `***' break, a table row or a container closer."
   "A `+' bullet is text in 0.2 (`djot-plus-bullet' rewrites it to `-')."
   (should-not (carve-test--face-includes
                (carve-test--face-at "+ item\n" "+") 'carve-list-marker-face)))
+
+(ert-deftest carve-test-snippet-definition ()
+  "A `{$name}: value' line at column 0 is a snippet definition (C2-B-236)."
+  (let ((text "{$ver}: 0.2.3\nText after with *strong*.\n"))
+    (should (carve-test--face-includes (carve-test--face-at text "$ver")
+                                       'carve-snippet-face))
+    (should (carve-test--face-includes (carve-test--face-at text "}:")
+                                       'carve-markup-face))
+    (should-not (carve-test--face-at text "0.2.3"))
+    (should (carve-test--face-includes (carve-test--face-at text "*strong*")
+                                       'carve-bold-face)))
+  (should (carve-test--face-includes
+           (carve-test--face-at "{$brand .badge}{key=v}: Carve\n" "$brand")
+           'carve-snippet-face)))
+
+(ert-deftest carve-test-snippet-definition-refused ()
+  "An id in the marker, no space, a lazy line or a list item is text."
+  (dolist (case '(("{$v #x}: a\n" . "$v")
+                  ("{$v}:x\n" . "$v")
+                  ("para line\n{$lazy}: a\n" . "$lazy")
+                  ("- item\n{$item}: a\n" . "$item")))
+    (should-not (carve-test--face-includes
+                 (carve-test--face-at (car case) (cdr case))
+                 'carve-snippet-face))))
+
+(ert-deftest carve-test-snippet-definition-ends-the-block ()
+  "A definition is a one-line block, so a heading below it opens."
+  (should (carve-test--face-includes
+           (carve-test--face-at "{$v}: a\n= Heading\n" "Heading")
+           'carve-heading-face)))
+
+(ert-deftest carve-test-snippet-use ()
+  "`{{ $name }}' is a snippet use, inline or alone (C2-I-128, C2-B-237)."
+  (dolist (text '("Release {{ $ver }} out.\n" "{{ $ver }}\n"))
+    (let ((face (carve-test--face-at text "$ver")))
+      (should (carve-test--face-includes face 'carve-snippet-face))
+      (should-not (carve-test--face-includes face 'carve-include-face))))
+  (should (carve-test--face-includes
+           (carve-test--face-at "{{ $ver }} with *strong*\n" "*strong*")
+           'carve-bold-face)))
+
+(ert-deftest carve-test-snippet-use-other-shapes-stay-includes ()
+  "A `$' path that is no snippet name, or an option, keeps the include faces."
+  (should (carve-test--face-includes
+           (carve-test--face-at "See {{ $a.crv }} here\n" "$a.crv")
+           'carve-include-face))
+  (should (carve-test--face-includes
+           (carve-test--face-at "See {{ $v @shift:1 }} here\n" "$v")
+           'carve-include-face))
+  (should-not (carve-test--face-at "No {{$v}} pad\n" "$v")))
+
+(ert-deftest carve-test-snippet-use-not-in-an-include-path ()
+  "A use spelled inside a quoted include path is part of the path (C2-I-128)."
+  (let ((face (carve-test--face-at "See {{ \"a {{ $ver }}.crv\" }} here\n" "$ver")))
+    (should (carve-test--face-includes face 'carve-include-face))
+    (should-not (carve-test--face-includes face 'carve-snippet-face))))
+
+(ert-deftest carve-test-snippet-use-escaped ()
+  "`\\{{ $v }}' escapes the brace and makes no use (C2-I-128)."
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "A \\{{ $v }} b\n" "$v")
+               'carve-snippet-face)))
+
+(ert-deftest carve-test-snippet-block-use-ends-the-block ()
+  "A use alone on its line is a one-line block, so a heading below it opens."
+  (should (carve-test--face-includes
+           (carve-test--face-at "{{ $v }}\n= Heading\n" "Heading")
+           'carve-heading-face))
+  (should-not (carve-test--face-includes
+               (carve-test--face-at "text\n{{ $v }}\n= Heading\n" "Heading")
+               'carve-heading-face)))
