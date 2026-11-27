@@ -2470,3 +2470,9 @@ That is a blank line, a `***' break, a table row or a container closer."
            (carve-test--face-at "See {{ $v @shift:1 }} here\n" "$v")
            'carve-include-face))
   (should-not (carve-test--face-at "No {{$v}} pad\n" "$v")))
+
+(ert-deftest carve-test-snippet-use-not-in-an-include-path ()
+  "A use spelled inside a quoted include path is part of the path (C2-I-128)."
+  (let ((face (carve-test--face-at "See {{ \"a {{ $ver }}.crv\" }} here\n" "$ver")))
+    (should (carve-test--face-includes face 'carve-include-face))
+    (should-not (carve-test--face-includes face 'carve-snippet-face))))

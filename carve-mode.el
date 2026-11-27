@@ -373,6 +373,12 @@ the region that matcher paints, and two spellings of one rule drift.")
   "A snippet definition `{$name}: value' (C2-B-236).
 Column 0 only, and a marker holding an id defines nothing.")
 
+(defconst carve--snippet-use-re
+  (rx (group "{{") (one-or-more " ")
+      (group "$" (in "A-Za-z0-9_") (zero-or-more (in "A-Za-z0-9_-")))
+      (one-or-more " ") (group "}}"))
+  "A snippet use `{{ $name }}': space pads only and no option.")
+
 (defconst carve--block-line-re
   (rx (or (seq (or (** 1 6 ?=) (** 1 6 ?#)) (one-or-more " ") (not (in " \t\n")))
           (regexp carve--snippet-definition-re)
@@ -1070,49 +1076,53 @@ never revisits it, which is also how the code-span matcher above earns
 its place."
   (catch 'done
     (while (search-forward "{{" limit t)
-      (let* ((open-beg (- (point) 2))
-             (open-end (point))
-             (bound (min limit (line-end-position)))
-             (pad-end (progn (skip-chars-forward " \t" bound) (point)))
-             (path-beg (point))
-             (path-end nil))
-        (when (> pad-end open-end)
-          (if (eq (char-after) ?\")
-              (when (carve--include-skip-quoted-run bound)
-                (setq path-end (point)))
-            (let ((c (char-after)))
-              (when (and c (not (memq c '(?# ?@ ?} ?\" ?\s ?\t ?\n))))
-                (forward-char 1)
-                (skip-chars-forward "^#@} \t\n" bound)
-                (setq path-end (point))))))
-        (if (not path-end)
-            (goto-char open-end)
-          (let ((tail-beg (point))
-                (close nil)
-                (stop nil))
-            (while (and (not close) (not stop) (< (point) bound))
-              (cond
-               ((eq (char-after) ?\})
-                ;; A `}' outside a quoted run ends the tail: either it opens
-                ;; the closer, or this candidate is not a directive at all -
-                ;; the bound the regexp had, kept deliberately.
-                (if (and (eq (char-after (1+ (point))) ?\})
-                         (> (point) tail-beg))
-                    (setq close (point))
-                  (setq stop t)))
-               ((carve--include-skip-quoted-run bound))
-               (t (forward-char 1))))
-            (if (not close)
-                (goto-char open-end)
-              (let ((end (+ close 2)))
-                (goto-char end)
-                (set-match-data (list open-beg end
-                                      open-beg open-end
-                                      open-end pad-end
-                                      path-beg path-end
-                                      tail-beg close
-                                      close end))
-                (throw 'done t)))))))
+      (if (save-excursion (goto-char (- (point) 2))
+                          (looking-at carve--snippet-use-re))
+          ;; A snippet use is no directive: leave it to its own keyword.
+          (goto-char (match-end 0))
+        (let* ((open-beg (- (point) 2))
+               (open-end (point))
+               (bound (min limit (line-end-position)))
+               (pad-end (progn (skip-chars-forward " \t" bound) (point)))
+               (path-beg (point))
+               (path-end nil))
+          (when (> pad-end open-end)
+            (if (eq (char-after) ?\")
+                (when (carve--include-skip-quoted-run bound)
+                  (setq path-end (point)))
+              (let ((c (char-after)))
+                (when (and c (not (memq c '(?# ?@ ?} ?\" ?\s ?\t ?\n))))
+                  (forward-char 1)
+                  (skip-chars-forward "^#@} \t\n" bound)
+                  (setq path-end (point))))))
+          (if (not path-end)
+              (goto-char open-end)
+            (let ((tail-beg (point))
+                  (close nil)
+                  (stop nil))
+              (while (and (not close) (not stop) (< (point) bound))
+                (cond
+                 ((eq (char-after) ?\})
+                  ;; A `}' outside a quoted run ends the tail: either it opens
+                  ;; the closer, or this candidate is not a directive at all -
+                  ;; the bound the regexp had, kept deliberately.
+                  (if (and (eq (char-after (1+ (point))) ?\})
+                           (> (point) tail-beg))
+                      (setq close (point))
+                    (setq stop t)))
+                 ((carve--include-skip-quoted-run bound))
+                 (t (forward-char 1))))
+              (if (not close)
+                  (goto-char open-end)
+                (let ((end (+ close 2)))
+                  (goto-char end)
+                  (set-match-data (list open-beg end
+                                        open-beg open-end
+                                        open-end pad-end
+                                        path-beg path-end
+                                        tail-beg close
+                                        close end))
+                  (throw 'done t))))))))
     nil))
 
 (defun carve--fontify-code-span (limit)
@@ -2172,16 +2182,6 @@ Without one the line is paragraph text, inside a quote or out of it."
     ;; so a directive inside `code' keeps the code face (font-lock does not
     ;; override a face already set), and BEFORE the mention and tag keywords, so
     ;; they find the run already claimed.
-    ;; A snippet use `{{ $name }}' (C2-I-128, C2-B-237): space pads only and
-    ;; no option, so it must claim the braces before the include matcher reads
-    ;; `$name' as a path.
-    (,(rx (group "{{") (one-or-more " ")
-          (group "$" (in "A-Za-z0-9_") (zero-or-more (in "A-Za-z0-9_-")))
-          (one-or-more " ") (group "}}"))
-     (1 'carve-markup-face)
-     (2 'carve-snippet-face)
-     (3 'carve-markup-face))
-
     (carve--fontify-include
      (1 'carve-markup-face)
      (3 'carve-include-face)
@@ -2222,6 +2222,14 @@ Without one the line is paragraph text, inside a quote or out of it."
       (1 'carve-include-option-face)
       (2 'carve-markup-face)
       (3 'carve-include-value-face)))
+
+    ;; A snippet use `{{ $name }}' (C2-I-128, C2-B-237).  After the include
+    ;; keyword, which skips this shape, so a use spelled inside a quoted path
+    ;; keeps the path's face.
+    (,carve--snippet-use-re
+     (1 'carve-markup-face)
+     (2 'carve-snippet-face)
+     (3 'carve-markup-face))
 
     ;; Escaped char: a backslash before an ASCII punctuation character.
     ;;
